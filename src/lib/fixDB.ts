@@ -31,6 +31,10 @@ export default async (knex: Knex): Promise<void> => {
       });
     }
   };
+  const ensureTable = async (table: string, builder: (table: Knex.CreateTableBuilder) => void) => {
+    if (await knex.schema.hasTable(table)) return;
+    await knex.schema.createTable(table, builder);
+  };
   //矫正因软件异常退出导致的状态不一致问题
   await db("o_novel").where("eventState", 0).update({
     eventState: -1,
@@ -68,6 +72,54 @@ export default async (knex: Knex): Promise<void> => {
   await addColumn("o_assets", "audioBindState", "integer");
   await addColumn("o_modelPrompt", "fileName", "string");
   await addColumn("o_modelPrompt", "path", "string");
+  await ensureTable("o_productionGraph", (table) => {
+    table.text("graphId").notNullable();
+    table.integer("projectId").notNullable();
+    table.integer("episodeId").notNullable();
+    table.integer("version").notNullable();
+    table.text("graphData").notNullable();
+    table.integer("createdAt").notNullable();
+    table.integer("updatedAt").notNullable();
+    table.primary(["graphId"]);
+    table.unique(["graphId"]);
+    table.unique(["projectId", "episodeId"]);
+  });
+  await ensureTable("o_productionCanvasV2", (table) => {
+    table.text("graphId").notNullable();
+    table.integer("projectId").notNullable();
+    table.integer("episodeId").notNullable();
+    table.integer("version").notNullable();
+    table.text("graphData").notNullable();
+    table.integer("createdAt").notNullable();
+    table.integer("updatedAt").notNullable();
+    table.primary(["graphId"]);
+    table.unique(["graphId"]);
+    table.unique(["projectId", "episodeId"]);
+  });
+  await ensureTable("o_productionGraphTemplate", (table) => {
+    table.text("id").notNullable();
+    table.integer("projectId").notNullable();
+    table.text("name").notNullable();
+    table.text("category");
+    table.text("content").notNullable();
+    table.text("description");
+    table.integer("createdAt").notNullable();
+    table.integer("updatedAt").notNullable();
+    table.primary(["id"]);
+    table.unique(["id"]);
+  });
+  await ensureTable("o_productionGraphPreset", (table) => {
+    table.text("id").notNullable();
+    table.integer("projectId").notNullable();
+    table.text("name").notNullable();
+    table.text("category");
+    table.text("content").notNullable();
+    table.text("description");
+    table.integer("createdAt").notNullable();
+    table.integer("updatedAt").notNullable();
+    table.primary(["id"]);
+    table.unique(["id"]);
+  });
   const vendorDataSelect = await u.db("o_vendorConfig").whereIn("id", ["deepseek", "atlascloud"]).select("*");
   if (!vendorDataSelect.find((i) => i.id == "deepseek")) {
     await u.db("o_vendorConfig").insert({

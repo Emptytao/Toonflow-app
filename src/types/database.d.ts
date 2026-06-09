@@ -1,4 +1,4 @@
-// @db-hash 46c86c97b2ffc399387f42c5b7c014eb
+// @db-hash 824da5c15035b798c0ebf0a632cf11f6
 //该文件由脚本自动生成，请勿手动修改
 
 export interface memories {
@@ -23,7 +23,6 @@ export interface o_agentDeploy {
   'modelName'?: string | null;
   'name'?: string | null;
   'temperature'?: number | null;
-  'topP'?: number | null;
   'type'?: string | null;
   'vendorId'?: string | null;
 }
@@ -98,7 +97,6 @@ export interface o_modelPrompt {
   'id'?: number;
   'model'?: string | null;
   'path'?: string | null;
-  'prompt'?: string | null;
   'vendorId'?: string | null;
 }
 export interface o_novel {
@@ -113,16 +111,43 @@ export interface o_novel {
   'projectId'?: number | null;
   'reel'?: string | null;
 }
-export interface o_outline {
-  'data'?: string | null;
-  'episode'?: number | null;
-  'id'?: number;
-  'projectId'?: number | null;
+export interface o_productionCanvasV2 {
+  'createdAt': number;
+  'episodeId': number;
+  'graphData': string;
+  'graphId'?: string;
+  'projectId': number;
+  'updatedAt': number;
+  'version': number;
 }
-export interface o_outlineNovel {
-  'id'?: number;
-  'novelId'?: number | null;
-  'outlineId'?: number | null;
+export interface o_productionGraph {
+  'createdAt': number;
+  'episodeId': number;
+  'graphData': string;
+  'graphId'?: string;
+  'projectId': number;
+  'updatedAt': number;
+  'version': number;
+}
+export interface o_productionGraphPreset {
+  'category'?: string | null;
+  'content': string;
+  'createdAt': number;
+  'description'?: string | null;
+  'id'?: string;
+  'name': string;
+  'projectId': number;
+  'updatedAt': number;
+}
+export interface o_productionGraphTemplate {
+  'category'?: string | null;
+  'content': string;
+  'createdAt': number;
+  'description'?: string | null;
+  'id'?: string;
+  'name': string;
+  'projectId': number;
+  'updatedAt': number;
 }
 export interface o_project {
   'artStyle'?: string | null;
@@ -255,8 +280,10 @@ export interface DB {
   "o_imageFlow": o_imageFlow;
   "o_modelPrompt": o_modelPrompt;
   "o_novel": o_novel;
-  "o_outline": o_outline;
-  "o_outlineNovel": o_outlineNovel;
+  "o_productionCanvasV2": o_productionCanvasV2;
+  "o_productionGraph": o_productionGraph;
+  "o_productionGraphPreset": o_productionGraphPreset;
+  "o_productionGraphTemplate": o_productionGraphTemplate;
   "o_project": o_project;
   "o_prompt": o_prompt;
   "o_script": o_script;

@@ -518,6 +518,54 @@ export default async (knex: Knex, forceInit: boolean = false): Promise<void> => 
         table.unique(["id"]);
       },
     },
+    // production graph 主画布
+    {
+      name: "o_productionGraph",
+      builder: (table) => {
+        table.text("graphId").notNullable();
+        table.integer("projectId").notNullable();
+        table.integer("episodeId").notNullable();
+        table.integer("version").notNullable();
+        table.text("graphData").notNullable();
+        table.integer("createdAt").notNullable();
+        table.integer("updatedAt").notNullable();
+        table.primary(["graphId"]);
+        table.unique(["graphId"]);
+        table.unique(["projectId", "episodeId"]);
+      },
+    },
+    // production graph 模板库
+    {
+      name: "o_productionGraphTemplate",
+      builder: (table) => {
+        table.text("id").notNullable();
+        table.integer("projectId").notNullable();
+        table.text("name").notNullable();
+        table.text("category");
+        table.text("content").notNullable();
+        table.text("description");
+        table.integer("createdAt").notNullable();
+        table.integer("updatedAt").notNullable();
+        table.primary(["id"]);
+        table.unique(["id"]);
+      },
+    },
+    // production graph 提示词预设
+    {
+      name: "o_productionGraphPreset",
+      builder: (table) => {
+        table.text("id").notNullable();
+        table.integer("projectId").notNullable();
+        table.text("name").notNullable();
+        table.text("category");
+        table.text("content").notNullable();
+        table.text("description");
+        table.integer("createdAt").notNullable();
+        table.integer("updatedAt").notNullable();
+        table.primary(["id"]);
+        table.unique(["id"]);
+      },
+    },
     //视频
     {
       name: "o_video",
@@ -623,6 +671,21 @@ export default async (knex: Knex, forceInit: boolean = false): Promise<void> => 
         table.text("flowData").notNullable();
         table.primary(["id"]);
         table.unique(["id"]);
+      },
+    },
+    {
+      name: "o_productionCanvasV2",
+      builder: (table) => {
+        table.text("graphId").notNullable();
+        table.integer("projectId").notNullable();
+        table.integer("episodeId").notNullable();
+        table.integer("version").notNullable();
+        table.text("graphData").notNullable();
+        table.integer("createdAt").notNullable();
+        table.integer("updatedAt").notNullable();
+        table.primary(["graphId"]);
+        table.unique(["graphId"]);
+        table.unique(["projectId", "episodeId"]);
       },
     },
     {
