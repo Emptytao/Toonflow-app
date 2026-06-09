@@ -18,6 +18,13 @@ type RouteModulePair = { routePath: string; varName: string; entry: string };
 export default async function generateRouter(): Promise<void> {
   // glob 得到 entries
   let entries: string[] = await fg(["src/routes/**/*.ts"]);
+  const entryPairs = await Promise.all(
+    entries.map(async (entry) => {
+      const content = await readFile(entry, "utf8");
+      return { entry, hasDefaultExport: /\bexport\s+default\b/.test(content) };
+    }),
+  );
+  entries = entryPairs.filter((item) => item.hasDefaultExport).map((item) => item.entry);
   // 排序
   entries = entries.sort((a, b) => a.localeCompare(b));
 

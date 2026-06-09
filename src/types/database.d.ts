@@ -97,6 +97,7 @@ export interface o_modelPrompt {
   'id'?: number;
   'model'?: string | null;
   'path'?: string | null;
+  'prompt'?: string | null;
   'vendorId'?: string | null;
 }
 export interface o_novel {

@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import { validateFields } from "@/middleware/middleware";
 import { z } from "zod";
+import { getDirectorManualPath, isReservedDirectorManual } from "@/utils/storySkills";
 const router = express.Router();
 
 // 新增导演手册
@@ -35,8 +36,12 @@ export default router.post(
         res.status(400).send(error("名称不能包含路径分隔符或为纯数字"));
         return;
       }
+      if (isReservedDirectorManual(directorManual)) {
+        res.status(400).send(error("该导演手册名称为系统保留名，不能创建"));
+        return;
+      }
 
-      const mainPath = u.getPath(["skills", "story_skills", directorManual]);
+      const mainPath = getDirectorManualPath(directorManual);
       if (fs.existsSync(mainPath)) {
         return res.status(400).send(error("请勿填写重复名称的视觉手册"));
       }
