@@ -1,4 +1,5 @@
 import u from "@/utils";
+import { isSeedance20Model } from "@/utils/videoModelRouting";
 import fs from "fs/promises";
 import path from "path";
 
@@ -21,10 +22,6 @@ export interface VideoPromptStoryboard {
   duration?: string | number | null;
   associateAssetsIds: number[];
   shouldGenerateImage?: boolean | number | string | null;
-}
-
-export function isSeedance20Model(modelName: string) {
-  return /seedance.*2[.\-]0/i.test(modelName);
 }
 
 export async function resolveVideoPromptTemplate(model: string, mode?: string) {
@@ -73,7 +70,9 @@ export async function loadVideoPromptContext(info: PromptInfoItem[]) {
         const assetRows = await u.db("o_assets2Storyboard").where("storyboardId", item.id).orderBy("rowid").select("assetId");
         return {
           ...storyboard,
-          associateAssetsIds: assetRows.map((row: { assetId: number }) => row.assetId),
+          associateAssetsIds: assetRows
+            .map((row) => row.assetId)
+            .filter((assetId): assetId is number => typeof assetId === "number"),
           _type: "storyboard" as const,
         };
       }

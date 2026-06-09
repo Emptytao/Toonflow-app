@@ -7,6 +7,7 @@ import { createSkillTools, parseFrontmatter, scanSkills, useSkill } from "@/util
 import useTools from "@/agents/productionAgent/tools";
 import ResTool from "@/socket/resTool";
 import { getDirectorSkillPaths } from "@/utils/storySkills";
+import { resolveStoryboardPanelWriteMode } from "@/utils/videoModelRouting";
 import * as fs from "fs";
 import path from "path";
 
@@ -53,19 +54,11 @@ export async function runDecisionAI(ctx: AgentContext) {
   if (!projectInfo) throw new Error(`项目不存在，ID: ${ctx.resTool.data.projectId}`);
   const [_, imageModelName] = projectInfo.imageModel!.split(/:(.+)/);
   const [id, videoModelName] = projectInfo.videoModel!.split(/:(.+)/);
+  const storyboardWriteMode = resolveStoryboardPanelWriteMode(videoModelName);
   const models = await u.vendor.getModelList(id);
   if (!models.length) throw new Error(`项目使用的模型不存在，ID: ${projectInfo.videoModel}`);
-  let videoMode = "";
-  try {
-    videoMode = JSON.parse(projectInfo.mode ?? "");
-  } catch (e) {
-    videoMode = projectInfo.mode ?? "";
-  }
-  const isRef = Array.isArray(videoMode) ? true : false;
-  // const findData = models.find((i: any) => i.modelName == videoModelName);
-  // const isRef = findData.mode.every((i: any) => Array.isArray(i));
 
-  const modelInfo = `项目使用的模型如下：\n图像模型：${imageModelName}\n视频模型：${videoModelName}\n多参：${isRef ? "是" : "否"}`;
+  const modelInfo = `项目使用的模型如下：\n图像模型：${imageModelName}\n视频模型：${videoModelName}\n分镜面板写入模式：${storyboardWriteMode}`;
 
   const mem = buildMemPrompt(await memory.get(text));
 
@@ -150,19 +143,11 @@ async function createSubAgent(parentCtx: AgentContext) {
 
   const [_, imageModelName] = projectInfo.imageModel!.split(/:(.+)/);
   const [id, videoModelName] = projectInfo.videoModel!.split(/:(.+)/);
+  const storyboardWriteMode = resolveStoryboardPanelWriteMode(videoModelName);
   const models = await u.vendor.getModelList(id);
   if (!models.length) throw new Error(`项目使用的模型不存在，ID: ${projectInfo.videoModel}`);
-  // const findData = models.find((i: any) => i.modelName == videoModelName);
-  //
-  let videoMode = "";
-  try {
-    videoMode = JSON.parse(projectInfo.mode ?? "");
-  } catch (e) {
-    videoMode = projectInfo.mode ?? "";
-  }
-  const isRef = Array.isArray(videoMode) ? true : false;
 
-  const modelInfo = `项目使用的模型如下：\n图像模型：${imageModelName}\n视频模型：${videoModelName}\n多参：${isRef ? "是" : "否"}`;
+  const modelInfo = `项目使用的模型如下：\n图像模型：${imageModelName}\n视频模型：${videoModelName}\n分镜面板写入模式：${storyboardWriteMode}`;
 
   // const run_sub_agent_execution = tool({
   //   description: "执行层子Agent，负责衍生资产、",
@@ -304,19 +289,17 @@ async function createSubAgent(parentCtx: AgentContext) {
     execute: async ({ prompt }) => {
       const skill = path.join(u.getPath("skills"), "production_execution_storyboard_panel.md");
       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
-
-      const addPrompt =
-        "\n你必须使用如下XML格式写入工作区：\n```\n<storyboardItem videoDesc='视频描述' prompt=提示词内容 track='分组' shouldGenerateImage='true/false' duration='视频推荐时间' associateAssetsIds='[该分镜所需的资产ID列表]'></storyboardItem>\n```";
+      const stagePrompt = `写入模式：${storyboardWriteMode}\n${prompt}`;
 
       return runAgent({
         key: "productionAgent:storyboardPanelAgent",
-        prompt,
-        system: systemPrompt + addPrompt,
+        prompt: stagePrompt,
+        system: systemPrompt,
         name: "执行导演",
         memoryKey: "assistant:execution",
         messages: [
           { role: "assistant", content: productionSkills.prompt + `\n${modelInfo}` },
-          { role: "user", content: prompt + addPrompt },
+          { role: "user", content: stagePrompt },
         ],
         tools: { activate_skill: productionSkills.tools.activate_skill },
       });
