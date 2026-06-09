@@ -30,7 +30,12 @@ description: >-
 
 ### 执行流程
 
-1. 获取 `script`、`assets` 和 `scriptPlan`，并激活 `director_storyboard_table_narrative`、`director_storyboard_table_style` 作为分镜设计的风格参考，同时激活 `storyboard_table_techniques` 作为分镜表通用技法参考（含分镜拆分原则、定场与镜头合并规则、视觉连续性铁律、字段填写指引、转场规则）。
+1. 获取 `script`、`assets` 和 `scriptPlan`，并显式激活以下技能作为分镜设计依据：
+   - `director_storyboard_table_foundation`：通用基础层，负责动作链拆解、站位与朝向、连续性、15 秒分镜段意识
+   - `director_storyboard_table_narrative`：当前题材叙事层
+   - `director_storyboard_table_style`：当前美术风格层
+   - `storyboard_table_techniques`：分镜表通用技法参考（含分镜拆分原则、定场与镜头合并规则、视觉连续性铁律、字段填写指引、转场规则）
+   - 冲突时先守基础层边界，再结合题材层与风格层落地
 2. **导演规划两层对齐**（在动笔拆分镜前完成，作为后续逐行决策的基准）：
    - **段落锚点**：从 `scriptPlan` ③叙事结构与节奏规划的段落表 提取 段落编号→场次→情绪浓度→节奏 的映射，建立"哪几个剧本段落对应哪个情绪强度+节奏档位"的对照表；同时记下 ⑥转场与视觉连续性 标注的段落过渡方式与空镜内容方向
    - **场次镜头意图**：逐场读取 ④分场景情绪与画面意图（情绪目标 / 氛围方向 / 镜头意图 / 空间叙事 / 距离感设计），作为该场所有分镜的景别、运镜、情绪字段决策依据；同步记下 ⑤声音方向 中该场标注的 1~2 个核心环境音

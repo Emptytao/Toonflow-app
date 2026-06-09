@@ -6,6 +6,7 @@ import Memory from "@/utils/agent/memory";
 import { createSkillTools, parseFrontmatter, scanSkills, useSkill } from "@/utils/agent/skillsTools";
 import useTools from "@/agents/productionAgent/tools";
 import ResTool from "@/socket/resTool";
+import { getDirectorSkillPaths } from "@/utils/storySkills";
 import * as fs from "fs";
 import path from "path";
 
@@ -376,8 +377,9 @@ async function createSubAgent(parentCtx: AgentContext) {
 
 async function createArtSkills(artName: string, storyName: string) {
   const artWorkerPath = u.getPath(["skills", "art_skills", artName, "driector_skills"]);
-  const storyWorkerPath = u.getPath(["skills", "story_skills", storyName, "driector_skills"]);
-  const skillList = [...(await scanSkills(artWorkerPath + "/*.md")), ...(await scanSkills(storyWorkerPath + "/*.md"))];
+  const storySkillPaths = getDirectorSkillPaths(storyName);
+  const storySkillGroups = await Promise.all(storySkillPaths.map(async (skillPath) => await scanSkills(skillPath + "/*.md")));
+  const skillList = [...(await scanSkills(artWorkerPath + "/*.md")), ...storySkillGroups.flat()];
   const mainSkills: { path: string; name: string; description: string }[] = [];
   for (const skillPath of skillList) {
     if (!fs.existsSync(skillPath)) throw new Error(`主技能文件不存在: ${skillPath}`);
@@ -464,11 +466,12 @@ ${skillEntries}
 
 async function useProductionSkills(artName: string, storyName: string) {
   const artWorkerPath = u.getPath(["skills", "art_skills", artName, "driector_skills"]);
-  const storyWorkerPath = u.getPath(["skills", "story_skills", storyName, "driector_skills"]);
   const productionPath = u.getPath(["skills", "production_skills"]);
+  const storySkillPaths = getDirectorSkillPaths(storyName);
+  const storySkillGroups = await Promise.all(storySkillPaths.map(async (skillPath) => await scanSkills(skillPath + "/*.md")));
   const skillList = [
     ...(await scanSkills(artWorkerPath + "/*.md")),
-    ...(await scanSkills(storyWorkerPath + "/*.md")),
+    ...storySkillGroups.flat(),
     ...(await scanSkills(productionPath + "/*.md")),
   ];
   const mainSkills: { path: string; name: string; description: string }[] = [];

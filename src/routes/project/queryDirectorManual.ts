@@ -3,6 +3,7 @@ import u from "@/utils";
 import { success } from "@/lib/responseFormat";
 import fs from "fs";
 import path from "path";
+import { getStorySkillsRootPath, isReservedDirectorManual } from "@/utils/storySkills";
 const router = express.Router();
 
 // 字段映射表
@@ -40,13 +41,14 @@ async function readAllImages(imagesDir: string) {
 // 获取导演手册
 export default router.post("/", async (req, res) => {
   try {
-    const artPromptsDir = u.getPath(["skills", "story_skills"]);
+    const artPromptsDir = getStorySkillsRootPath();
 
     // 读取所有风格文件夹
     const styleDirs = fs
       .readdirSync(artPromptsDir, { withFileTypes: true })
       .filter((d) => d.isDirectory())
-      .map((d) => d.name);
+      .map((d) => d.name)
+      .filter((name) => !isReservedDirectorManual(name));
 
     const result = await Promise.all(
       styleDirs.map(async (directorManual) => {

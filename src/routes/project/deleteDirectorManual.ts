@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { z } from "zod";
 import { error, success } from "@/lib/responseFormat";
 import { validateFields } from "@/middleware/middleware";
+import { getDirectorManualPath, isReservedDirectorManual } from "@/utils/storySkills";
 const router = express.Router();
 
 // 删除导演手册
@@ -21,8 +22,12 @@ export default router.post(
         res.status(400).send(error("名称不能包含路径分隔符或为纯数字"));
         return;
       }
+      if (isReservedDirectorManual(name)) {
+        res.status(400).send(error("该导演手册为系统保留项，不能删除"));
+        return;
+      }
 
-      const artPromptsDir = u.getPath(["skills", "story_skills", name]);
+      const artPromptsDir = getDirectorManualPath(name);
 
       try {
         const stat = await fs.stat(artPromptsDir);
