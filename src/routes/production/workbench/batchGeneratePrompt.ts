@@ -1,5 +1,6 @@
 import express from "express";
 import u from "@/utils";
+import pLimit from "p-limit";
 import { z } from "zod";
 import { success, error } from "@/lib/responseFormat";
 import { validateFields } from "@/middleware/middleware";
@@ -28,13 +29,15 @@ export default router.post(
     ),
     model: z.string(),
     mode: z.string().optional(),
+    concurrentCount: z.number().optional(), //并发数
   }),
   async (req, res) => {
-    const { projectId, trackData, model, mode } = req.body as {
+    const { trackData, projectId, mode, model, concurrentCount = 5 } = req.body as {
       projectId: number;
       trackData: { trackId: number; info: { id: number; sources: string }[] }[];
       model: string;
       mode?: string;
+      concurrentCount?: number;
     };
 
     try {
@@ -43,33 +46,51 @@ export default router.post(
       const visualManual = u.getArtPrompt(artStyle, "art_skills", "art_storyboard_video");
       const { modelName, videoPromptGeneration } = await resolveVideoPromptTemplate(model, mode ?? projectData?.mode ?? undefined);
 
-      const results: { trackId: number; prompt: string }[] = [];
-      for (const track of trackData) {
-        const { assets, storyboard, assetsAudioRecord } = await loadVideoPromptContext(track.info);
-        const content = buildVideoPromptContent(modelName, assets, storyboard, assetsAudioRecord);
-        const { text } = await u.Ai.Text("universalAi").invoke({
-          system: videoPromptGeneration,
-          messages: [
-            {
-              role: "assistant",
-              content: `${visualManual}`,
-            },
-            {
-              role: "user",
-              content,
-            },
-          ],
-        });
-        await u.db("o_videoTrack").where({ id: track.trackId }).update({
-          prompt: text,
-        });
-        results.push({
-          trackId: track.trackId,
-          prompt: text,
-        });
-      }
+      await u
+        .db("o_videoTrack")
+        .whereIn(
+          "id",
+          trackData.map((t: { trackId: number }) => t.trackId),
+        )
+        .update({ state: "生成中" });
 
-      res.status(200).send(success(results));
+      const limit = pLimit(concurrentCount ?? 5);
+      const tasks = trackData.map((track) =>
+        limit(async () => {
+          try {
+            const { assets, storyboard, assetsAudioRecord } = await loadVideoPromptContext(track.info);
+            const content = buildVideoPromptContent(modelName, assets, storyboard, assetsAudioRecord);
+
+            const { text } = await u.Ai.Text("universalAi").invoke({
+              system: videoPromptGeneration,
+              messages: [
+                {
+                  role: "assistant",
+                  content: `${visualManual}`,
+                },
+                {
+                  role: "user",
+                  content: content,
+                },
+              ],
+            });
+
+            await u.db("o_videoTrack").where({ id: track.trackId }).update({
+              prompt: text,
+              state: "已完成",
+            });
+
+            return { trackId: track.trackId, text };
+          } catch (e) {
+            const reason = u.error(e).message;
+            await u.db("o_videoTrack").where({ id: track.trackId }).update({ state: "生成失败", reason });
+            return { trackId: track.trackId, error: reason };
+          }
+        }),
+      );
+
+      void Promise.allSettled(tasks);
+      res.status(200).send(success("开始生成提示词"));
     } catch (e) {
       res.status(400).send(error(u.error(e).message));
     }
