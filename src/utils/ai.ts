@@ -22,7 +22,7 @@ type AiType =
   | "productionAgent:storyboardPanelAgent"
   | "productionAgent:storyboardTableAgent";
 
-type FnName = "textRequest" | "imageRequest" | "videoRequest" | "ttsRequest";
+type FnName = "textRequest" | "imageRequest" | "videoRequest" | "queryVideoResult" | "ttsRequest";
 
 const AiTypeValues: AiType[] = [
   "scriptAgent",
@@ -287,13 +287,26 @@ interface VideoConfig {
   referenceList?: ReferenceList[];
   audio?: boolean;
   mode: VideoMode[];
+  onTaskId?: (taskId: string) => void | Promise<void>;
 }
+
+type VideoRequestResult = string | { data?: string; url?: string; taskId?: string };
+type VideoQueryResult = { status: string; url?: string; error?: string; raw?: any };
 
 class AiVideo {
   private key: `${string}:${string}`;
   private result: string = "";
+  private taskId: string = "";
   constructor(key: `${string}:${string}`) {
     this.key = key;
+  }
+  getTaskId() {
+    return this.taskId;
+  }
+  async queryResult(taskId: string): Promise<VideoQueryResult> {
+    const modelName = await resolveModelName(this.key);
+    const fn = await getVendorTemplateFn("queryVideoResult", modelName);
+    return await fn(taskId);
   }
   async run(input: VideoConfig, taskRecord?: TaskRecord) {
     const modelName = await resolveModelName(this.key);
@@ -302,7 +315,20 @@ class AiVideo {
         const fn = await getVendorTemplateFn("videoRequest", mn);
         await referenceList2imageBase642(mn.split(/:(.+)/)[0], input);
 
-        this.result = await fn(input);
+        const result = (await fn({
+          ...input,
+          onTaskId: async (taskId: string) => {
+            this.taskId = taskId;
+            await input.onTaskId?.(taskId);
+          },
+        })) as VideoRequestResult;
+
+        if (typeof result === "string") {
+          this.result = result;
+        } else {
+          this.taskId = result.taskId ?? this.taskId;
+          this.result = result.data ?? result.url ?? "";
+        }
 
         if (this.result.startsWith("http")) this.result = await urlToBase64(this.result);
       };

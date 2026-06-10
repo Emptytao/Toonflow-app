@@ -573,6 +573,8 @@ export default async (knex: Knex, forceInit: boolean = false): Promise<void> => 
         table.integer("id").notNullable();
         table.text("filePath");
         table.text("errorReason");
+        table.text("remoteTaskId");
+        table.text("model");
         table.integer("time");
         table.text("state");
         table.integer("scriptId");

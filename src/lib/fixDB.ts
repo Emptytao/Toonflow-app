@@ -72,6 +72,8 @@ export default async (knex: Knex): Promise<void> => {
   await addColumn("o_assets", "audioBindState", "integer");
   await addColumn("o_modelPrompt", "fileName", "string");
   await addColumn("o_modelPrompt", "path", "string");
+  await addColumn("o_video", "remoteTaskId", "text");
+  await addColumn("o_video", "model", "text");
   await ensureTable("o_productionGraph", (table) => {
     table.text("graphId").notNullable();
     table.integer("projectId").notNullable();

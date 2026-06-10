@@ -87,6 +87,7 @@ export default router.post(
           scriptId,
           projectId,
           videoTrackId: trackId,
+          model,
         });
 
         return { videoId, videoPath, prompt, duration, images, trackId };
@@ -114,6 +115,9 @@ export default router.post(
             aspectRatio: (ratio?.videoRatio as "16:9" | "9:16") || "16:9",
             resolution,
             audio,
+            onTaskId: async (taskId) => {
+              await u.db("o_video").where("id", videoId).update({ remoteTaskId: taskId });
+            },
           },
           {
             projectId,

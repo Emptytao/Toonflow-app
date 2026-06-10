@@ -79,6 +79,7 @@ interface VideoConfig {
   referenceList?: ReferenceList[];
   audio?: boolean;
   mode: VideoMode[];
+  onTaskId?: (taskId: string) => void | Promise<void>;
 }
 
 interface TTSConfig {
@@ -109,6 +110,7 @@ declare const exports: {
   textRequest: (m: TextModel, t: boolean, tl: 0 | 1 | 2 | 3) => any;
   imageRequest: (c: ImageConfig, m: ImageModel) => Promise<string>;
   videoRequest: (c: VideoConfig, m: VideoModel) => Promise<string>;
+  queryVideoResult?: (taskId: string, m: VideoModel) => Promise<{ status: string; url?: string; error?: string; raw?: any }>;
   ttsRequest: (c: TTSConfig, m: TTSModel) => Promise<string>;
 };
 
@@ -304,15 +306,53 @@ const extractVideoTaskId = (data: any): string | undefined => {
 
 const extractVideoResult = (data: any): string | undefined => {
   const candidates = [
+    data?.content?.video_url,
+    data?.content?.url,
+    data?.content?.download_url,
+    data?.content?.file_url,
     data?.metadata?.url,
+    data?.metadata?.download_url,
+    data?.metadata?.file_url,
     data?.data?.metadata?.url,
+    data?.data?.metadata?.download_url,
+    data?.data?.metadata?.file_url,
     data?.result?.metadata?.url,
+    data?.result?.metadata?.download_url,
+    data?.result?.metadata?.file_url,
     data?.video_url,
     data?.data?.video_url,
+    data?.data?.content?.video_url,
+    data?.data?.content?.url,
+    data?.data?.content?.download_url,
+    data?.data?.content?.file_url,
+    data?.result?.content?.video_url,
+    data?.result?.content?.url,
+    data?.result?.content?.download_url,
+    data?.result?.content?.file_url,
     data?.output?.video_url,
+    data?.output?.url,
+    data?.output?.download_url,
+    data?.output?.file_url,
+    data?.output?.video?.url,
+    data?.output?.video?.download_url,
+    data?.output?.video?.file_url,
+    Array.isArray(data?.data) ? data.data?.[0]?.video_url : undefined,
+    Array.isArray(data?.data) ? data.data?.[0]?.url : undefined,
+    Array.isArray(data?.data) ? data.data?.[0]?.download_url : undefined,
+    Array.isArray(data?.data) ? data.data?.[0]?.file_url : undefined,
+    Array.isArray(data?.output) ? data.output?.[0]?.video_url : undefined,
+    Array.isArray(data?.output) ? data.output?.[0]?.url : undefined,
+    Array.isArray(data?.output) ? data.output?.[0]?.download_url : undefined,
+    Array.isArray(data?.output) ? data.output?.[0]?.file_url : undefined,
     data?.url,
     data?.data?.url,
     data?.result?.url,
+    data?.download_url,
+    data?.data?.download_url,
+    data?.result?.download_url,
+    data?.file_url,
+    data?.data?.file_url,
+    data?.result?.file_url,
   ];
   return candidates.find((item) => typeof item === "string" && item.length > 0);
 };
@@ -326,6 +366,37 @@ const getTaskStatus = (data: any) =>
       data?.state ||
       ""
   ).toLowerCase();
+
+const queryVideoResult = async (taskId: string, model: VideoModel): Promise<{ status: string; url?: string; error?: string; raw?: any }> => {
+  const queryResponse = await fetch(getVideoQueryUrl(taskId), {
+    method: "GET",
+    headers: {
+      Authorization: getAuthorization("video"),
+    },
+  });
+  await throwIfNotOk(queryResponse, "视频任务查询");
+
+  const queryData = await parseJsonResponse(queryResponse);
+  throwIfBodyError(queryData, "视频任务查询");
+  const status = getTaskStatus(queryData);
+  logger(`[reborn_ai queryVideoResult] ${model.modelName} 状态: ${status}`);
+
+  if (["completed", "success", "succeeded"].includes(status)) {
+    const url = extractVideoResult(queryData);
+    if (!url) {
+      logger(`[reborn_ai queryVideoResult] ${model.modelName} success payload: ${JSON.stringify(queryData).slice(0, 4000)}`);
+    }
+    return { status: "succeeded", url, raw: queryData };
+  }
+  if (["failed", "failure", "error"].includes(status)) {
+    return {
+      status: "failed",
+      error: queryData?.error?.message || queryData?.message || `${model.modelName} 视频生成失败`,
+      raw: queryData,
+    };
+  }
+  return { status: status || "running", raw: queryData };
+};
 
 const getVideoDimensions = (resolution: string, aspectRatio: "16:9" | "9:16") => {
   const normalizedResolution = String(resolution || "").toLowerCase();
@@ -543,32 +614,18 @@ const videoRequest = async (config: VideoConfig, model: VideoModel): Promise<str
   if (!taskId) {
     throw new Error(`视频任务创建成功但未返回 task id: ${JSON.stringify(createData)}`);
   }
+  await config.onTaskId?.(taskId);
 
   const result = await pollTask(async () => {
-    const queryResponse = await fetch(getVideoQueryUrl(taskId), {
-      method: "GET",
-      headers: {
-        Authorization: getAuthorization("video"),
-      },
-    });
-    await throwIfNotOk(queryResponse, "视频任务查询");
-
-    const queryData = await parseJsonResponse(queryResponse);
-    throwIfBodyError(queryData, "视频任务查询");
-    const status = getTaskStatus(queryData);
+    const taskResult = await queryVideoResult(taskId, model);
+    const status = taskResult.status;
     logger(`[reborn_ai videoRequest] ${model.modelName} 状态: ${status}`);
 
-    if (["completed", "success", "succeeded"].includes(status)) {
-      return { completed: true, data: extractVideoResult(queryData) };
+    if (status === "succeeded") {
+      return { completed: true, data: taskResult.url };
     }
-    if (["failed", "failure", "error"].includes(status)) {
-      return {
-        completed: true,
-        error:
-          queryData?.error?.message ||
-          queryData?.message ||
-          `${model.modelName} 视频生成失败`,
-      };
+    if (status === "failed") {
+      return { completed: true, error: taskResult.error || `${model.modelName} 视频生成失败` };
     }
     return { completed: false };
   }, 5000, 20 * 60 * 1000);
@@ -590,6 +647,7 @@ exports.vendor = vendor;
 exports.textRequest = textRequest;
 exports.imageRequest = imageRequest;
 exports.videoRequest = videoRequest;
+exports.queryVideoResult = queryVideoResult;
 exports.ttsRequest = ttsRequest;
 
 export {};

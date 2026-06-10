@@ -200,8 +200,8 @@ export default router.post(
             .filter((v) => v.videoTrackId === trackId)
             .map(async (v) => ({
               id: v.id!,
-              src: v.filePath ? await u.oss.getFileUrl(v.filePath) : "",
-              state: v.state === "已完成" ? "已完成" : v.state === "生成中" ? "生成中" : v.state === "生成失败" ? "生成失败" : "未生成",
+              src: v.state === "生成成功" && v.filePath ? await u.oss.getFileUrl(v.filePath) : "",
+              state: v.state === "生成成功" || v.state === "已完成" ? "已完成" : v.state === "生成中" ? "生成中" : v.state === "生成失败" ? "生成失败" : "未生成",
               errorReason: v?.errorReason ?? "",
             })),
         ),
