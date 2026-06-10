@@ -42,6 +42,26 @@ function buildMemPrompt(mem: Awaited<ReturnType<Memory["get"]>>): string {
   return `## Memory\n以下是你对用户的记忆，可作为参考但不要主动提及：\n${memoryContext}`;
 }
 
+function normalizeProductionSupervisionPrompt(prompt: string) {
+  const normalized = String(prompt || "").trim();
+  if (!normalized) return normalized;
+
+  if (/审核对象\s*[:：]\s*(导演规划|拍摄计划|scriptPlan|script plan)/i.test(normalized)) {
+    return normalized;
+  }
+  if (/审核对象\s*[:：]\s*(分镜表|storyboardTable|storyboard table)/i.test(normalized)) {
+    return normalized;
+  }
+
+  if (/(导演规划审核|拍摄计划审核|审核导演规划|审核拍摄计划|导演规划|拍摄计划|scriptPlan|script plan|director plan)/i.test(normalized)) {
+    return `审核对象：导演规划审核\n${normalized}`;
+  }
+  if (/(分镜表审核|审核分镜|分镜表|storyboardTable|storyboard table|review storyboard)/i.test(normalized)) {
+    return `审核对象：分镜表审核\n${normalized}`;
+  }
+  return normalized;
+}
+
 export async function runDecisionAI(ctx: AgentContext) {
   const { isolationKey, text, abortSignal } = ctx;
   const memory = new Memory("productionAgent", isolationKey);
@@ -91,6 +111,7 @@ export async function runDecisionAI(ctx: AgentContext) {
 async function createSubAgent(parentCtx: AgentContext) {
   const { resTool, abortSignal } = parentCtx;
   const memory = new Memory("productionAgent", parentCtx.isolationKey);
+  const readOnlyTools = useTools({ resTool, msg: parentCtx.msg, toolsNames: ["get_flowData"] });
   async function runAgent({
     key,
     prompt,
@@ -98,6 +119,7 @@ async function createSubAgent(parentCtx: AgentContext) {
     name,
     memoryKey,
     tools: extraTools,
+    includeDefaultTools = true,
     messages,
   }: {
     key: `${string}:${string}`;
@@ -106,16 +128,18 @@ async function createSubAgent(parentCtx: AgentContext) {
     name: string;
     memoryKey: string;
     tools?: Record<string, any>;
+    includeDefaultTools?: boolean;
     messages?: { role: "user" | "assistant" | "system"; content: string }[];
   }) {
     parentCtx.msg.complete();
     const subMsg = resTool.newMessage("assistant", name);
+    const defaultTools = includeDefaultTools ? useTools({ resTool, msg: subMsg }) : {};
 
     const { fullStream } = await u.Ai.Text(key, parentCtx.thinkConfig.think, parentCtx.thinkConfig.thinlLevel).stream({
       system,
       messages: messages ?? [{ role: "user", content: prompt }],
       abortSignal,
-      tools: { ...extraTools, ...useTools({ resTool, msg: subMsg }) },
+      tools: { ...defaultTools, ...extraTools },
     });
 
     const fullResponse = await consumeFullStream(fullStream, subMsg);
@@ -337,12 +361,15 @@ async function createSubAgent(parentCtx: AgentContext) {
     execute: async ({ prompt }) => {
       const skill = path.join(u.getPath("skills"), "production_agent_supervision.md");
       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+      const normalizedPrompt = normalizeProductionSupervisionPrompt(prompt);
       return runAgent({
         key: "productionAgent:supervisionAgent",
-        prompt,
+        prompt: normalizedPrompt,
         system: systemPrompt,
         name: "监制",
         memoryKey: "assistant:supervision",
+        includeDefaultTools: false,
+        tools: readOnlyTools,
       });
     },
   });
