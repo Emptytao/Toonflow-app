@@ -62,8 +62,45 @@ function normalizeProductionSupervisionPrompt(prompt: string) {
   return normalized;
 }
 
+function shouldAutoRecoverStoryboardPanel(prompt: string) {
+  const normalized = String(prompt || "").trim();
+  if (!normalized) return false;
+  if (/(审核|审查|review|分镜表|storyboardTable|storyboard table)/i.test(normalized)) return false;
+  return /(继续|下一步|生成故事板|故事板生成|生成分镜图|分镜图生成|生成分镜|故事板|分镜图)/i.test(normalized);
+}
+
+async function getProductionStageSnapshot(projectId: number, scriptId: number) {
+  const sqlData = await u
+    .db("o_agentWorkData")
+    .where("projectId", String(projectId))
+    .andWhere("episodesId", String(scriptId))
+    .where("key", "productionAgent")
+    .select("data")
+    .first();
+
+  let storyboardTable = "";
+  try {
+    const parsed = JSON.parse(sqlData?.data ?? "{}");
+    storyboardTable = parsed?.storyboardTable ?? "";
+  } catch {
+    storyboardTable = "";
+  }
+
+  const storyboardCountRecord = (await u
+    .db("o_storyboard")
+    .where({ projectId, scriptId })
+    .count("* as total")
+    .first()) as { total?: number | string } | undefined;
+
+  return {
+    hasStoryboardTable: Boolean(String(storyboardTable || "").trim()),
+    storyboardCount: Number(storyboardCountRecord?.total ?? 0),
+  };
+}
+
 export async function runDecisionAI(ctx: AgentContext) {
-  const { isolationKey, text, abortSignal } = ctx;
+  const { isolationKey, abortSignal } = ctx;
+  let text = ctx.text;
   const memory = new Memory("productionAgent", isolationKey);
   await memory.add("user", text);
 
@@ -79,6 +116,14 @@ export async function runDecisionAI(ctx: AgentContext) {
   if (!models.length) throw new Error(`项目使用的模型不存在，ID: ${projectInfo.videoModel}`);
 
   const modelInfo = `项目使用的模型如下：\n图像模型：${imageModelName}\n视频模型：${videoModelName}\n分镜面板写入模式：${storyboardWriteMode}`;
+
+  const stageSnapshot = await getProductionStageSnapshot(ctx.resTool.data.projectId, ctx.resTool.data.scriptId);
+  if (stageSnapshot.hasStoryboardTable && stageSnapshot.storyboardCount === 0 && shouldAutoRecoverStoryboardPanel(text)) {
+    text =
+      `【系统纠偏】当前分镜表已存在，但分镜面板为空。` +
+      `本轮必须先执行阶段5「分镜面板写入」，完成后如果用户目的是生成故事板，再继续执行阶段6「分镜图生成」。` +
+      `不要只回复“无法生成”。\n用户请求：${text}`;
+  }
 
   const mem = buildMemPrompt(await memory.get(text));
 
@@ -272,11 +317,63 @@ async function createSubAgent(parentCtx: AgentContext) {
     },
   });
 
+  // const mainSkills: { path: string; name: string; description: string }[] = [];
+  // for (const skill of mainSkill) {
+  //   const skillPath = path.join(rootDir, skill + ".md");
+  //   if (!fs.existsSync(skillPath)) throw new Error(`主技能文件不存在: ${skillPath}`);
+  //   if (!isPathInside(skillPath, normalizedRootDir)) throw new Error(`技能名称无效：检测到路径穿越。${skillPath}`);
+  //   const content = await fs.promises.readFile(skillPath, "utf-8");
+  //   const parsed = parseFrontmatter(content);
+  //   mainSkills.push({ path: skillPath, ...parsed });
+  // }
+
+  const productionSkills = await useProductionSkills(projectInfo?.artStyle!, projectInfo?.directorManual!);
+
+  async function runStoryboardPanelAgent(prompt: string) {
+    const skill = path.join(u.getPath("skills"), "production_execution_storyboard_panel.md");
+    const systemPrompt = await fs.promises.readFile(skill, "utf-8");
+    const stagePrompt = `写入模式：${storyboardWriteMode}\n${prompt}`;
+
+    return runAgent({
+      key: "productionAgent:storyboardPanelAgent",
+      prompt: stagePrompt,
+      system: systemPrompt,
+      name: "执行导演",
+      memoryKey: "assistant:execution",
+      messages: [
+        { role: "assistant", content: productionSkills.prompt + `\n${modelInfo}` },
+        { role: "user", content: stagePrompt },
+      ],
+      tools: { activate_skill: productionSkills.tools.activate_skill },
+    });
+  }
+
+  async function ensureStoryboardPanelReady(userPrompt: string) {
+    const snapshot = await getProductionStageSnapshot(resTool.data.projectId, resTool.data.scriptId);
+    if (!snapshot.hasStoryboardTable || snapshot.storyboardCount > 0) return;
+
+    await runStoryboardPanelAgent(
+      [
+        "当前分镜表已存在，但分镜面板为空。",
+        "请严格依据当前工作区里的现有分镜表写入分镜面板。",
+        "不要重写导演计划，不要重写分镜表。",
+        "完成分镜面板写入后即可结束本轮子任务。",
+        `用户当前目标：${userPrompt}`,
+      ].join("\n"),
+    );
+
+    const refreshedSnapshot = await getProductionStageSnapshot(resTool.data.projectId, resTool.data.scriptId);
+    if (refreshedSnapshot.storyboardCount <= 0) {
+      throw new Error("分镜面板补齐失败，当前仍没有可用的分镜数据");
+    }
+  }
+
   //分镜图生成
   const run_sub_agent_storyboard_gen = tool({
     description: "运行执行subAgent来完成分镜图生成相关任务",
     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
     execute: async ({ prompt }) => {
+      await ensureStoryboardPanelReady(prompt);
       const skill = path.join(u.getPath("skills"), "production_execution_storyboard_gen.md");
       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
       return runAgent({
@@ -294,40 +391,11 @@ async function createSubAgent(parentCtx: AgentContext) {
     },
   });
 
-  // const mainSkills: { path: string; name: string; description: string }[] = [];
-  // for (const skill of mainSkill) {
-  //   const skillPath = path.join(rootDir, skill + ".md");
-  //   if (!fs.existsSync(skillPath)) throw new Error(`主技能文件不存在: ${skillPath}`);
-  //   if (!isPathInside(skillPath, normalizedRootDir)) throw new Error(`技能名称无效：检测到路径穿越。${skillPath}`);
-  //   const content = await fs.promises.readFile(skillPath, "utf-8");
-  //   const parsed = parseFrontmatter(content);
-  //   mainSkills.push({ path: skillPath, ...parsed });
-  // }
-
-  const productionSkills = await useProductionSkills(projectInfo?.artStyle!, projectInfo?.directorManual!);
-
   //分镜面板写入
   const run_sub_agent_storyboard_panel = tool({
     description: "运行执行subAgent来完成分镜面板写入相关任务",
     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
-    execute: async ({ prompt }) => {
-      const skill = path.join(u.getPath("skills"), "production_execution_storyboard_panel.md");
-      const systemPrompt = await fs.promises.readFile(skill, "utf-8");
-      const stagePrompt = `写入模式：${storyboardWriteMode}\n${prompt}`;
-
-      return runAgent({
-        key: "productionAgent:storyboardPanelAgent",
-        prompt: stagePrompt,
-        system: systemPrompt,
-        name: "执行导演",
-        memoryKey: "assistant:execution",
-        messages: [
-          { role: "assistant", content: productionSkills.prompt + `\n${modelInfo}` },
-          { role: "user", content: stagePrompt },
-        ],
-        tools: { activate_skill: productionSkills.tools.activate_skill },
-      });
-    },
+    execute: async ({ prompt }) => runStoryboardPanelAgent(prompt),
   });
 
   //分镜表写入

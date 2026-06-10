@@ -23,16 +23,17 @@ description: >-
 | 操作 | 调用 |
 |------|------|
 | 读取分镜面板 | `get_flowData("storyboard")` |
-| 生成图片 | `generate_storyboard_images({ ids: [分镜ID列表] })` |
+| 生成图片 | `generate_storyboard({ ids: [分镜ID列表] })` |
 
 ### 执行流程
 
 1. 获取 `storyboard`
 2. 提取真实分镜 ID 列表
-3. 调用 `generate_storyboard_images({ ids: [真实分镜ID列表] })` 生成分镜图片（异步，发起即返回）
+3. 调用 `generate_storyboard({ ids: [真实分镜ID列表] })` 生成分镜图片
 
 ### 约束
 
 - 前置条件：分镜面板已写入完成
+- 若 `storyboard` 为空，不能编造分镜 ID，必须直接结束并报告当前没有可生成的分镜面板数据
 - 图片必须与分镜描述匹配
 - 仅使用 `storyboard` 中的真实分镜 ID，禁止编造或复用无效 ID
