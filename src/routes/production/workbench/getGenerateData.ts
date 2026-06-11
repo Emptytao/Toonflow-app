@@ -21,6 +21,7 @@ interface TrackMedia {
 interface TrackItem {
   id?: number;
   prompt: string;
+  bgmSuggestion: string;
   state: "未生成" | "生成中" | "已完成" | "生成失败";
   reason?: string;
   duration?: number;
@@ -165,6 +166,7 @@ export default router.post(
         id: trackId,
         duration: item?.duration ?? 0,
         prompt: item?.prompt || "",
+        bgmSuggestion: item?.bgmSuggestion || "",
         state: (item?.state as "未生成" | "生成中" | "已完成" | "生成失败") ?? "未生成",
         reason: item?.reason ?? "",
         selectVideoId: Number(item?.videoId)!,

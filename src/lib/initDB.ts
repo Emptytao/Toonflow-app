@@ -518,6 +518,22 @@ export default async (knex: Knex, forceInit: boolean = false): Promise<void> => 
         table.unique(["id"]);
       },
     },
+    // 生产 Agent 按剧本保存的运行状态
+    {
+      name: "o_productionAgentState",
+      builder: (table) => {
+        table.integer("id").notNullable();
+        table.integer("projectId").notNullable();
+        table.integer("scriptId").notNullable();
+        table.string("storyboardWriteMode");
+        table.text("supervisionGate");
+        table.integer("createTime");
+        table.integer("updateTime");
+        table.primary(["id"]);
+        table.unique(["id"]);
+        table.unique(["projectId", "scriptId"]);
+      },
+    },
     // production graph 主画布
     {
       name: "o_productionGraph",
@@ -595,6 +611,7 @@ export default async (knex: Knex, forceInit: boolean = false): Promise<void> => 
         table.text("state");
         table.text("reason");
         table.text("prompt");
+        table.text("bgmSuggestion");
         table.integer("selectVideoId");
         table.integer("duration");
         table.primary(["id"]);

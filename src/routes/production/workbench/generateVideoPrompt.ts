@@ -5,6 +5,7 @@ import { success, error } from "@/lib/responseFormat";
 import { validateFields } from "@/middleware/middleware";
 import {
   buildVideoPromptContent,
+  generateBgmSuggestion,
   loadVideoPromptContext,
   resolveVideoPromptTemplate,
 } from "./videoPromptUtils";
@@ -53,9 +54,11 @@ export default router.post(
           },
         ],
       });
+      const bgmSuggestion = await generateBgmSuggestion(modelName, visualManual, content);
       await u.db("o_videoTrack").where({ id: trackId }).update({
         state: "已完成",
         prompt: text,
+        bgmSuggestion,
       });
       res.status(200).send(success(text));
     } catch (e) {

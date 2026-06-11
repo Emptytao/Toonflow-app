@@ -161,6 +161,35 @@ ${storyboardSummary}
 `;
 }
 
+export async function generateBgmSuggestion(modelName: string, visualManual: string, content: string) {
+  if (!isSeedance20Model(modelName)) return "";
+
+  try {
+    const { text } = await u.Ai.Text("universalAi").invoke({
+      system: [
+        "你是短剧视频 BGM 推荐助手。",
+        "根据输入的资产信息、分镜信息和视觉风格，生成一段供人工参考的 BGM 推荐建议。",
+        "这段建议不会参与视频生成，请不要输出视频提示词、XML、分镜正文或解释过程。",
+        "只输出 BGM 推荐文本，80-160 字，包含情绪方向、节奏速度、音乐质感、适合进入/收束的位置。",
+        "不得改写剧情，不得新增台词，不得要求模型生成配乐。",
+      ].join("\n"),
+      messages: [
+        {
+          role: "assistant",
+          content: visualManual,
+        },
+        {
+          role: "user",
+          content,
+        },
+      ],
+    });
+    return text.trim();
+  } catch {
+    return "";
+  }
+}
+
 export function buildStoryboardItemXml(item: VideoPromptStoryboard) {
   const associateAssetsIds = escapeXmlAttribute(JSON.stringify(item.associateAssetsIds ?? []));
   return `<storyboardItem

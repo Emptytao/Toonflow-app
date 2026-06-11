@@ -20,7 +20,7 @@ export default router.post(
       .where("scriptId", scriptId)
       .whereIn("id", trackIds)
       .whereIn("state", ["已完成", "生成失败"])
-      .select("id", "state", "reason", "prompt");
+      .select("id", "state", "reason", "prompt", "bgmSuggestion");
     res.status(200).send(success(promptList));
   },
 );

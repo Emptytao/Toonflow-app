@@ -35,6 +35,15 @@ export interface o_agentWorkData {
   'projectId'?: number | null;
   'updateTime'?: number | null;
 }
+export interface o_productionAgentState {
+  'createTime'?: number | null;
+  'id'?: number;
+  'projectId': number;
+  'scriptId': number;
+  'storyboardWriteMode'?: string | null;
+  'supervisionGate'?: string | null;
+  'updateTime'?: number | null;
+}
 export interface o_artStyle {
   'fileUrl'?: string | null;
   'id'?: number;
@@ -257,6 +266,7 @@ export interface o_video {
   'videoTrackId'?: number | null;
 }
 export interface o_videoTrack {
+  'bgmSuggestion'?: string | null;
   'duration'?: number | null;
   'id'?: number;
   'projectId'?: number | null;
@@ -282,6 +292,7 @@ export interface DB {
   "o_imageFlow": o_imageFlow;
   "o_modelPrompt": o_modelPrompt;
   "o_novel": o_novel;
+  "o_productionAgentState": o_productionAgentState;
   "o_productionCanvasV2": o_productionCanvasV2;
   "o_productionGraph": o_productionGraph;
   "o_productionGraphPreset": o_productionGraphPreset;
