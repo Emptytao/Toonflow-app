@@ -10,12 +10,14 @@ export default router.post(
     id: z.number(),
     prompt: z.string().optional(),
     bgmSuggestion: z.string().optional(),
+    promptStyle: z.enum(["general", "high_energy", "lyrical"]).optional(),
   }),
   async (req, res) => {
-    const { id, prompt, bgmSuggestion } = req.body;
-    const updateData: { prompt?: string; bgmSuggestion?: string } = {};
+    const { id, prompt, bgmSuggestion, promptStyle } = req.body;
+    const updateData: { prompt?: string; bgmSuggestion?: string; promptStyle?: string } = {};
     if (prompt !== undefined) updateData.prompt = prompt;
     if (bgmSuggestion !== undefined) updateData.bgmSuggestion = bgmSuggestion;
+    if (promptStyle !== undefined) updateData.promptStyle = promptStyle;
     if (Object.keys(updateData).length) {
       await u.db("o_videoTrack").where("id", id).update(updateData);
     }

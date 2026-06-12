@@ -272,6 +272,7 @@ export interface o_videoTrack {
   'id'?: number;
   'projectId'?: number | null;
   'prompt'?: string | null;
+  'promptStyle'?: string | null;
   'reason'?: string | null;
   'scriptId'?: number | null;
   'selectVideoId'?: number | null;

@@ -22,6 +22,7 @@ export default router.post(
       projectId,
       scriptId,
       duration,
+      promptStyle: "general",
     });
     res.status(200).send(success(trackId));
   },

@@ -76,7 +76,7 @@ description: >-
 ## 执行流程（严格线性，六步，不可回退）
 
 **第 1 步 · 一次性读取数据（整个任务仅此一次）**
-同轮调用 `get_flowData("script")`、`get_flowData("assets")`、`get_flowData("scriptPlan")`，并显式激活 `director_storyboard_table_foundation`、`director_storyboard_table_narrative`、`director_storyboard_table_style`、`storyboard_table_techniques`。
+同轮调用 `get_flowData("script")`、`get_flowData("assets")`、`get_flowData("scriptPlan")`，并显式激活 `director_storyboard_table_foundation`、`director_storyboard_table_narrative`、`director_storyboard_table_style`、`storyboard_table_techniques`、`storyboard_narrative_decomposition`、`storyboard_emotion_beats`、`storyboard_action_dynamics`、`storyboard_continuity_segmentation`。
 > 完成后你已拥有全部所需数据。**此后严禁再调用任何 `get_flowData` 或读取类工具。** 若你冒出「再确认一下数据 / 再读一遍现状」的念头，那是错误信号——不要执行，直接进入下一步。
 
 **第 2 步 · 对齐导演规划**
@@ -116,7 +116,12 @@ description: >-
   - `director_storyboard_table_narrative`：当前题材叙事层
   - `director_storyboard_table_style`：当前风格层
   - `storyboard_table_techniques`：通用分镜表技法参考
+  - `storyboard_narrative_decomposition`：叙事拆解与镜头任务划分
+  - `storyboard_emotion_beats`：情绪落点、反应镜与节拍铺垫
+  - `storyboard_action_dynamics`：动作链、动态细节与结果兑现
+  - `storyboard_continuity_segmentation`：片段衔接、动作桥梁、视线链接
   - 冲突时先守基础层边界，再结合题材层与风格层落地
+- **禁止激活视频润色 skill**：本阶段不得激活任何最终视频提示词风格润色技能；诸如“单视频提示词润色 / 高能戏剧化 / 慢节奏细腻质感”仅属于最终视频 prompt 阶段。
 - **只读引用、禁止操作资产**：严禁创建 / 修改 / 删除 / 生成任何资产，也不得调用任何资产写入或生成类工具。分镜表只能引用 `assets` 中已存在的资产。剧本需要但 `assets` 缺失的角色 / 物件，只在画面内容中体现，**不编造名称、不编造 ID**。
 
 ---
@@ -148,7 +153,7 @@ description: >-
 
 ## 本阶段红线（写完必检，不可妥协、不可由模型自行豁免）
 
-1.  **基础层必须生效**：第 1 步读取后，必须显式激活 `director_storyboard_table_foundation`、`director_storyboard_table_narrative`、`director_storyboard_table_style`、`storyboard_table_techniques`；冲突时先守基础层边界，再结合题材层与风格层落地。
+1.  **基础层必须生效**：第 1 步读取后，必须显式激活 `director_storyboard_table_foundation`、`director_storyboard_table_narrative`、`director_storyboard_table_style`、`storyboard_table_techniques`、`storyboard_narrative_decomposition`、`storyboard_emotion_beats`、`storyboard_action_dynamics`、`storyboard_continuity_segmentation`；冲突时先守基础层边界，再结合题材层与风格层落地。
 2.  **依据剧本、顺序一致**：按叙事顺序拆分，不遗漏、不新增情节，镜头顺序与剧本一致。
 3.  **台词照搬**：所有台词（含 OS / VO）一字不改、标明来源人；漏台词视为严重错误。
 4.  **不可拍摄内容已处理**：心理 / 旁白 / 抽象交代已按「不可拍摄的部分」转译为可见物象或 OS/VO，未原样塞进画面内容。

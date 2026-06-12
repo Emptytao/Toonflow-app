@@ -3,7 +3,7 @@ import u from "@/utils";
 import { z } from "zod";
 import { success } from "@/lib/responseFormat";
 import { validateFields } from "@/middleware/middleware";
-import { parseVideoPromptAiTrace } from "./videoPromptUtils";
+import { normalizeVideoPromptStyle, parseVideoPromptAiTrace } from "./videoPromptUtils";
 const router = express.Router();
 
 export default router.post(
@@ -21,10 +21,11 @@ export default router.post(
       .where("scriptId", scriptId)
       .whereIn("id", trackIds)
       .whereIn("state", ["已完成", "生成失败"])
-      .select("id", "state", "reason", "prompt", "bgmSuggestion", "aiTrace");
+      .select("id", "state", "reason", "prompt", "bgmSuggestion", "aiTrace", "promptStyle");
     const data = promptList.map((item) => ({
       ...item,
       aiTrace: parseVideoPromptAiTrace(item.aiTrace),
+      promptStyle: normalizeVideoPromptStyle(item.promptStyle),
     }));
     res.status(200).send(success(data));
   },

@@ -1,6 +1,13 @@
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import u from "@/utils";
+import {
+  buildVideoPromptContent,
+  composeVideoPromptSystem,
+  normalizeVideoPromptStyle,
+  resolveVideoPromptStyle,
+  resolveVideoPromptTemplate,
+} from "@/routes/production/workbench/videoPromptUtils";
 
 export type CanvasV2NodeType = "media" | "prompt" | "loop" | "video";
 export type CanvasV2RuntimeStatus = "idle" | "queued" | "running" | "success" | "error" | "stopped";
@@ -90,6 +97,7 @@ export interface VideoNodeDataV2 {
   duration: number;
   audio: boolean;
   prompt: string;
+  promptStyle: "general" | "high_energy" | "lyrical";
   referenceItems: CanvasV2MediaItem[];
   runtime: CanvasV2Runtime;
   videoResults: CanvasV2VideoResult[];
@@ -192,6 +200,7 @@ function createVideoDefaults(data?: Partial<VideoNodeDataV2>): VideoNodeDataV2 {
     duration: Number(data?.duration ?? 5),
     audio: Boolean(data?.audio),
     prompt: data?.prompt ?? "",
+    promptStyle: normalizeVideoPromptStyle(data?.promptStyle),
     referenceItems: Array.isArray(data?.referenceItems) ? data.referenceItems : [],
     runtime: normalizeRuntime(data?.runtime),
     videoResults: Array.isArray(data?.videoResults) ? data.videoResults : [],
@@ -487,30 +496,16 @@ function collectLoopSummaries(graph: CanvasV2Document, node: CanvasV2Node<VideoW
     });
 }
 
-async function getVideoPromptSystem(model: string) {
-  const [vendorId, modelName] = String(model || "").split(/:(.+)/);
-  const dbPrompt = await u.db("o_prompt").where("type", "videoPromptGeneration").first();
-  const boundPrompt = vendorId && modelName ? await u.db("o_modelPrompt").where({ vendorId, model: modelName }).first() : null;
-  if (boundPrompt?.path) {
-    try {
-      const fs = await import("fs/promises");
-      const path = await import("path");
-      const fullPath = path.join(u.getPath(["modelPrompt"]), boundPrompt.path);
-      return await fs.readFile(fullPath, "utf-8");
-    } catch {}
-  }
-  return dbPrompt?.useData || dbPrompt?.data || "你是视频提示词生成助手，请根据输入素材整理成适合视频模型的提示词。";
-}
-
 async function generateVideoPromptForWorkflow(
   projectId: number,
   graph: CanvasV2Document,
   node: CanvasV2Node<VideoWorkflowNodeDataV2>,
 ) {
-  const promptSystem = await getVideoPromptSystem(node.data.model);
+  const { videoPromptGeneration, modelName } = await resolveVideoPromptTemplate(node.data.model, node.data.mode);
   const project = await u.db("o_project").where("id", projectId).select("artStyle").first();
   const artStyle = project?.artStyle || "无";
   const visualManual = u.getArtPrompt(artStyle, "art_skills", "art_storyboard_video");
+  const styleSkill = await resolveVideoPromptStyle(node.data.promptStyle);
   const promptText = resolvePromptText(graph, node);
   const items = await collectMediaReferences(graph, node);
   const loops = collectLoopSummaries(graph, node);
@@ -518,18 +513,24 @@ async function generateVideoPromptForWorkflow(
   const assetEntries = resolved.filter((row) => row?.type === "asset");
   const storyboardEntries = resolved.filter((row) => row?.type === "storyboard");
   const uploadEntries = items.filter((item) => item.sourceType === "upload" || item.sourceType === "videoResult");
-  const content = `
-模型名称：${node.data.model}
-
-资产信息：${assetEntries
-  .map((asset: any) => `[${asset.id},${asset.assetType},${asset.label}]`)
-  .join("，")}
-
-分镜信息：${storyboardEntries
-  .map(
-    (storyboard: any) => `<storyboardItem videoDesc='${storyboard.videoDesc || storyboard.prompt || storyboard.label}' duration='${storyboard.duration || ""}'></storyboardItem>`,
-  )
-  .join("\n")}
+  const content = `${buildVideoPromptContent(
+    modelName,
+    assetEntries.map((asset: any) => ({
+      id: asset.id,
+      type: asset.assetType,
+      name: asset.label,
+      filePath: asset.filePath ?? asset.url ?? "workflow",
+    })),
+    storyboardEntries.map((storyboard: any) => ({
+      videoDesc: storyboard.videoDesc || storyboard.prompt || storyboard.label,
+      prompt: storyboard.prompt || "",
+      track: storyboard.track || "",
+      duration: storyboard.duration || "",
+      associateAssetsIds: [],
+      shouldGenerateImage: storyboard.shouldGenerateImage,
+    })),
+    {},
+  )}
 
 上传素材：${uploadEntries.map((item) => `[${item.fileType},${item.label}]`).join("，")}
 
@@ -546,19 +547,15 @@ async function generateVideoPromptForWorkflow(
       : "无"
   }
 `;
+  const system = composeVideoPromptSystem({
+    template: videoPromptGeneration,
+    visualManual,
+    styleSkill,
+  });
 
   const { text } = await u.Ai.Text("universalAi").invoke({
-    system: promptSystem,
-    messages: [
-      {
-        role: "assistant",
-        content: visualManual || "",
-      },
-      {
-        role: "user",
-        content,
-      },
-    ],
+    system,
+    messages: [{ role: "user", content }],
   });
   return text?.trim() || promptText;
 }

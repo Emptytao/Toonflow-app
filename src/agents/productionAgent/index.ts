@@ -649,6 +649,7 @@ async function createSubAgent(parentCtx: AgentContext) {
   // }
 
   const productionSkills = await useProductionSkills(projectInfo?.artStyle!, projectInfo?.directorManual!);
+  const storyboardTableSkills = await useStoryboardTableSkills(projectInfo?.artStyle!, projectInfo?.directorManual!);
 
   async function runStoryboardPanelAgent(prompt: string) {
     await assertNoBlockingSupervisionGate();
@@ -742,10 +743,10 @@ async function createSubAgent(parentCtx: AgentContext) {
         name: "执行导演",
         memoryKey: "assistant:execution",
         messages: [
-          { role: "assistant", content: productionSkills.prompt + `\n${buildModelInfo()}` },
+          { role: "assistant", content: storyboardTableSkills.prompt + `\n${buildModelInfo()}` },
           { role: "user", content: prompt + addPrompt },
         ],
-        tools: { activate_skill: productionSkills.tools.activate_skill },
+        tools: { activate_skill: storyboardTableSkills.tools.activate_skill },
       });
       await runSupervisionForStage("storyboardTable");
       return result;
@@ -803,6 +804,37 @@ ${buildSkillPrompt(mainSkills)}`,
   };
   return res;
 }
+
+const STORYBOARD_TABLE_PRODUCTION_SKILL_FILES = [
+  "storyboard_table_techniques.md",
+  "storyboard_narrative_decomposition.md",
+  "storyboard_emotion_beats.md",
+  "storyboard_action_dynamics.md",
+  "storyboard_continuity_segmentation.md",
+];
+
+async function loadSkillMetas(skillPaths: string[]) {
+  const mainSkills: { path: string; name: string; description: string }[] = [];
+  for (const skillPath of skillPaths) {
+    if (!fs.existsSync(skillPath)) throw new Error(`主技能文件不存在: ${skillPath}`);
+    const content = await fs.promises.readFile(skillPath, "utf-8");
+    const parsed = parseFrontmatter(content);
+    mainSkills.push({ path: skillPath, ...parsed });
+  }
+  return mainSkills;
+}
+
+async function buildSkillBundle(skillPaths: string[]) {
+  const mainSkills = await loadSkillMetas(skillPaths);
+  return {
+    prompt: `## Skills
+以下技能提供了专业任务的专用指令。
+当任务与某个技能的描述匹配时，调用 activate_skill 工具并传入技能名称来加载完整指令。
+${buildSkillPrompt(mainSkills)}`,
+    tools: createSkillTools(mainSkills, { mainSkill: mainSkills, secondarySkills: [], tertiarySkills: [] }),
+  };
+}
+
 async function consumeFullStream(
   fullStream: AsyncIterable<any>,
   initialMsg: ReturnType<ResTool["newMessage"]>,
@@ -897,4 +929,13 @@ ${buildSkillPrompt(mainSkills)}`,
     tools: createSkillTools(mainSkills, { mainSkill: mainSkills, secondarySkills: [], tertiarySkills: [] }),
   };
   return res;
+}
+
+async function useStoryboardTableSkills(artName: string, storyName: string) {
+  const artWorkerPath = u.getPath(["skills", "art_skills", artName, "driector_skills"]);
+  const productionPath = u.getPath(["skills", "production_skills"]);
+  const storySkillPaths = getDirectorSkillPaths(storyName);
+  const storySkillGroups = await Promise.all(storySkillPaths.map(async (skillPath) => await scanSkills(skillPath + "/*.md")));
+  const productionSkillPaths = STORYBOARD_TABLE_PRODUCTION_SKILL_FILES.map((fileName) => path.join(productionPath, fileName));
+  return buildSkillBundle([...(await scanSkills(artWorkerPath + "/*.md")), ...storySkillGroups.flat(), ...productionSkillPaths]);
 }

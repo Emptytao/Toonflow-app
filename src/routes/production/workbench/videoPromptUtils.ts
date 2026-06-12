@@ -8,6 +8,21 @@ export interface PromptInfoItem {
   sources: string;
 }
 
+export const VIDEO_PROMPT_STYLES = ["general", "high_energy", "lyrical"] as const;
+
+export type VideoPromptStyle = (typeof VIDEO_PROMPT_STYLES)[number];
+
+export interface VideoPromptStyleOption {
+  value: VideoPromptStyle;
+  label: string;
+}
+
+export const VIDEO_PROMPT_STYLE_OPTIONS: VideoPromptStyleOption[] = [
+  { value: "general", label: "通用润色" },
+  { value: "high_energy", label: "高能戏剧化" },
+  { value: "lyrical", label: "慢节奏细腻质感" },
+];
+
 export interface VideoPromptAsset {
   id: number;
   type?: string | null;
@@ -32,6 +47,22 @@ export interface VideoPromptAiTrace {
   modelName: string;
   inputSummary: string;
   visualManual: string;
+  promptStyle: VideoPromptStyle;
+  styleSkillName: string;
+  systemLayers: string[];
+}
+
+interface ResolvedVideoPromptStyle {
+  promptStyle: VideoPromptStyle;
+  skillName: string;
+  content: string;
+}
+
+export function normalizeVideoPromptStyle(value?: string | null): VideoPromptStyle {
+  if (value && VIDEO_PROMPT_STYLES.includes(value as VideoPromptStyle)) {
+    return value as VideoPromptStyle;
+  }
+  return "general";
 }
 
 export async function resolveVideoPromptTemplate(model: string, mode?: string) {
@@ -66,6 +97,35 @@ export async function resolveVideoPromptTemplate(model: string, mode?: string) {
     modelName,
     videoPromptGeneration,
   };
+}
+
+export async function resolveVideoPromptStyle(promptStyle?: string | null): Promise<ResolvedVideoPromptStyle> {
+  const normalizedStyle = normalizeVideoPromptStyle(promptStyle);
+  const fileNameMap: Record<VideoPromptStyle, string> = {
+    general: "video_prompt_style_general.md",
+    high_energy: "video_prompt_style_high_energy.md",
+    lyrical: "video_prompt_style_lyrical.md",
+  };
+  const skillNameMap: Record<VideoPromptStyle, string> = {
+    general: "单视频提示词润色",
+    high_energy: "高能戏剧化润色",
+    lyrical: "慢节奏细腻质感润色",
+  };
+  const fullPath = u.getPath(["skills", "production_skills", fileNameMap[normalizedStyle]]);
+  const content = await fs.readFile(fullPath, "utf-8");
+  return {
+    promptStyle: normalizedStyle,
+    skillName: skillNameMap[normalizedStyle],
+    content,
+  };
+}
+
+export function composeVideoPromptSystem(params: {
+  template: string;
+  visualManual: string;
+  styleSkill: ResolvedVideoPromptStyle;
+}) {
+  return [params.template.trim(), params.visualManual.trim(), params.styleSkill.content.trim()].filter(Boolean).join("\n\n");
 }
 
 export async function loadVideoPromptContext(info: PromptInfoItem[]) {
@@ -206,31 +266,48 @@ export function buildVideoPromptAiTrace(params: {
   modelName: string;
   inputSummary: string;
   visualManual: string;
+  promptStyle: VideoPromptStyle;
+  styleSkillName: string;
+  systemLayers: string[];
 }): VideoPromptAiTrace {
   return {
     prompt: params.prompt,
-    thinking: params.thinking?.trim() || buildVideoPromptThinkingSummary(params.modelName, params.inputSummary, params.visualManual),
+    thinking:
+      params.thinking?.trim() ||
+      buildVideoPromptThinkingSummary(params.modelName, params.inputSummary, params.visualManual, params.promptStyle),
     skill: "videoPromptGeneration",
     tools: [
       "loadVideoPromptContext",
       "resolveVideoPromptTemplate",
+      "resolveVideoPromptStyle",
+      "composeVideoPromptSystem",
       'u.Ai.Text("universalAi").invoke',
       "generateBgmSuggestion",
     ],
     modelName: params.modelName,
     inputSummary: params.inputSummary,
     visualManual: params.visualManual,
+    promptStyle: params.promptStyle,
+    styleSkillName: params.styleSkillName,
+    systemLayers: params.systemLayers,
   };
 }
 
-function buildVideoPromptThinkingSummary(modelName: string, inputSummary: string, visualManual: string) {
+function buildVideoPromptThinkingSummary(
+  modelName: string,
+  inputSummary: string,
+  visualManual: string,
+  promptStyle: VideoPromptStyle,
+) {
   void modelName;
   const hasSummary = inputSummary?.trim().length > 0;
   const hasVisual = visualManual?.trim().length > 0;
+  const styleLabel = VIDEO_PROMPT_STYLE_OPTIONS.find((item) => item.value === promptStyle)?.label ?? "通用润色";
   return [
     "先读取当前轨道关联的资产、分镜与视觉风格约束。",
-    hasVisual ? "再结合项目视觉手册与模型提示词模板整理生成方向。" : "",
+    hasVisual ? "再结合项目视觉手册、模型提示词模板与风格润色层整理生成方向。" : "",
     hasSummary ? "随后按分镜内容拼接视频提示词，并同步生成 BGM 参考建议。" : "",
+    `本次采用的提示词风格为：${styleLabel}。`,
     "最终输出可直接用于视频生成的提示词结果。",
   ]
     .filter(Boolean)

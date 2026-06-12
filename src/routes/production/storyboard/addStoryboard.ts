@@ -31,6 +31,7 @@ export default router.post(
       id: trackId,
       scriptId: scriptId,
       projectId,
+      promptStyle: "general",
     });
     const [id] = await u.db("o_storyboard").insert({
       prompt,

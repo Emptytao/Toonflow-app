@@ -7,8 +7,11 @@ import { validateFields } from "@/middleware/middleware";
 import {
   buildVideoPromptAiTrace,
   buildVideoPromptContent,
+  composeVideoPromptSystem,
   generateBgmSuggestion,
   loadVideoPromptContext,
+  normalizeVideoPromptStyle,
+  resolveVideoPromptStyle,
   resolveVideoPromptTemplate,
   stringifyVideoPromptAiTrace,
 } from "./videoPromptUtils";
@@ -32,22 +35,31 @@ export default router.post(
     ),
     model: z.string(),
     mode: z.string().optional(),
+    promptStyle: z.enum(["general", "high_energy", "lyrical"]).optional(),
     concurrentCount: z.number().optional(), //并发数
   }),
   async (req, res) => {
-    const { trackData, projectId, mode, model, concurrentCount = 5 } = req.body as {
+    const { trackData, projectId, mode, model, promptStyle, concurrentCount = 5 } = req.body as {
       projectId: number;
       trackData: { trackId: number; info: { id: number; sources: string }[] }[];
       model: string;
       mode?: string;
+      promptStyle?: "general" | "high_energy" | "lyrical";
       concurrentCount?: number;
     };
+    const normalizedPromptStyle = normalizeVideoPromptStyle(promptStyle);
 
     try {
       const projectData = await u.db("o_project").select("*").where({ id: projectId }).first();
       const artStyle = projectData?.artStyle || "无";
       const visualManual = u.getArtPrompt(artStyle, "art_skills", "art_storyboard_video");
       const { modelName, videoPromptGeneration } = await resolveVideoPromptTemplate(model, mode ?? projectData?.mode ?? undefined);
+      const styleSkill = await resolveVideoPromptStyle(normalizedPromptStyle);
+      const system = composeVideoPromptSystem({
+        template: videoPromptGeneration,
+        visualManual,
+        styleSkill,
+      });
 
       await u
         .db("o_videoTrack")
@@ -55,7 +67,7 @@ export default router.post(
           "id",
           trackData.map((t: { trackId: number }) => t.trackId),
         )
-        .update({ state: "生成中" });
+        .update({ state: "生成中", promptStyle: normalizedPromptStyle });
 
       const limit = pLimit(concurrentCount ?? 5);
       const tasks = trackData.map((track) =>
@@ -65,17 +77,8 @@ export default router.post(
             const content = buildVideoPromptContent(modelName, assets, storyboard, assetsAudioRecord);
 
             const { text, reasoningText } = await u.Ai.Text("universalAi").invoke({
-              system: videoPromptGeneration,
-              messages: [
-                {
-                  role: "assistant",
-                  content: `${visualManual}`,
-                },
-                {
-                  role: "user",
-                  content: content,
-                },
-              ],
+              system,
+              messages: [{ role: "user", content }],
             });
             const bgmSuggestion = await generateBgmSuggestion(modelName, visualManual, content);
             const aiTrace = buildVideoPromptAiTrace({
@@ -84,6 +87,9 @@ export default router.post(
               modelName,
               inputSummary: content,
               visualManual,
+              promptStyle: normalizedPromptStyle,
+              styleSkillName: styleSkill.skillName,
+              systemLayers: ["template", "visualManual", "styleSkill"],
             });
 
             await u.db("o_videoTrack").where({ id: track.trackId }).update({
@@ -91,9 +97,10 @@ export default router.post(
               bgmSuggestion,
               aiTrace: stringifyVideoPromptAiTrace(aiTrace),
               state: "已完成",
+              promptStyle: normalizedPromptStyle,
             });
 
-            return { trackId: track.trackId, text, bgmSuggestion, aiTrace };
+            return { trackId: track.trackId, text, bgmSuggestion, aiTrace, promptStyle: normalizedPromptStyle };
           } catch (e) {
             const reason = u.error(e).message;
             await u.db("o_videoTrack").where({ id: track.trackId }).update({ state: "生成失败", reason });

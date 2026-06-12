@@ -3,7 +3,13 @@ import u from "@/utils";
 import { z } from "zod";
 import { success } from "@/lib/responseFormat";
 import { validateFields } from "@/middleware/middleware";
-import { parseVideoPromptAiTrace, type VideoPromptAiTrace } from "./videoPromptUtils";
+import {
+  normalizeVideoPromptStyle,
+  parseVideoPromptAiTrace,
+  type VideoPromptAiTrace,
+  type VideoPromptStyle,
+  VIDEO_PROMPT_STYLE_OPTIONS,
+} from "./videoPromptUtils";
 const router = express.Router();
 
 interface VideoItem {
@@ -24,6 +30,7 @@ interface TrackItem {
   prompt: string;
   bgmSuggestion: string;
   aiTrace: VideoPromptAiTrace | null;
+  promptStyle: VideoPromptStyle;
   state: "未生成" | "生成中" | "已完成" | "生成失败";
   reason?: string;
   duration?: number;
@@ -170,6 +177,7 @@ export default router.post(
         prompt: item?.prompt || "",
         bgmSuggestion: item?.bgmSuggestion || "",
         aiTrace: parseVideoPromptAiTrace(item?.aiTrace),
+        promptStyle: normalizeVideoPromptStyle(item?.promptStyle),
         state: (item?.state as "未生成" | "生成中" | "已完成" | "生成失败") ?? "未生成",
         reason: item?.reason ?? "",
         selectVideoId: Number(item?.videoId)!,
@@ -221,6 +229,7 @@ export default router.post(
           })),
         ),
         trackList,
+        promptStyleOptions: VIDEO_PROMPT_STYLE_OPTIONS,
       }),
     );
   },

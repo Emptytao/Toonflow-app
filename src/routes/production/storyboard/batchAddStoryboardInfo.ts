@@ -83,6 +83,7 @@ export default router.post(
           scriptId,
           projectId,
           duration: trackDuration,
+          promptStyle: "general",
         });
         trackId = newTrackId;
       }

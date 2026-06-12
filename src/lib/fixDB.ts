@@ -76,6 +76,7 @@ export default async (knex: Knex): Promise<void> => {
   await addColumn("o_video", "model", "text");
   await addColumn("o_videoTrack", "bgmSuggestion", "text");
   await addColumn("o_videoTrack", "aiTrace", "text");
+  await addColumn("o_videoTrack", "promptStyle", "text");
   await ensureTable("o_productionAgentState", (table) => {
     table.integer("id").notNullable();
     table.integer("projectId").notNullable();
