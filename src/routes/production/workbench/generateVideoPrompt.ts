@@ -4,10 +4,12 @@ import { z } from "zod";
 import { success, error } from "@/lib/responseFormat";
 import { validateFields } from "@/middleware/middleware";
 import {
+  buildVideoPromptAiTrace,
   buildVideoPromptContent,
   generateBgmSuggestion,
   loadVideoPromptContext,
   resolveVideoPromptTemplate,
+  stringifyVideoPromptAiTrace,
 } from "./videoPromptUtils";
 
 const router = express.Router();
@@ -41,7 +43,7 @@ export default router.post(
       const visualManual = u.getArtPrompt(artStyle, "art_skills", "art_storyboard_video");
       const content = buildVideoPromptContent(modelName, assets, storyboard, assetsAudioRecord);
 
-      const { text } = await u.Ai.Text("universalAi").invoke({
+      const { text, reasoningText } = await u.Ai.Text("universalAi").invoke({
         system: videoPromptGeneration,
         messages: [
           {
@@ -55,12 +57,26 @@ export default router.post(
         ],
       });
       const bgmSuggestion = await generateBgmSuggestion(modelName, visualManual, content);
+      const aiTrace = buildVideoPromptAiTrace({
+        prompt: text,
+        thinking: reasoningText,
+        modelName,
+        inputSummary: content,
+        visualManual,
+      });
       await u.db("o_videoTrack").where({ id: trackId }).update({
         state: "已完成",
         prompt: text,
         bgmSuggestion,
+        aiTrace: stringifyVideoPromptAiTrace(aiTrace),
       });
-      res.status(200).send(success(text));
+      res.status(200).send(
+        success({
+          prompt: text,
+          bgmSuggestion,
+          aiTrace,
+        }),
+      );
     } catch (e) {
       await u
         .db("o_videoTrack")

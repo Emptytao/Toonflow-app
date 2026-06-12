@@ -200,7 +200,7 @@ class AiText {
     return generateText({
       ...(input.tools && { stopWhen: stepCountIs(Object.keys(input.tools).length * 50) }),
       ...input,
-      model: await this.resolveModel(),
+      model: await this.resolveModel(extractReasoningMiddleware({ tagName: "reasoning_content", separator: "\n" })),
       ...(config?.temperature && { temperature: config.temperature }),
       ...(config?.maxOutputTokens && { maxOutputTokens: config.maxOutputTokens }),
     } as Parameters<typeof generateText>[0]);

@@ -24,6 +24,16 @@ export interface VideoPromptStoryboard {
   shouldGenerateImage?: boolean | number | string | null;
 }
 
+export interface VideoPromptAiTrace {
+  prompt: string;
+  thinking: string;
+  skill: string;
+  tools: string[];
+  modelName: string;
+  inputSummary: string;
+  visualManual: string;
+}
+
 export async function resolveVideoPromptTemplate(model: string, mode?: string) {
   const [vendorId = "", modelName = ""] = model.split(/:(.+)/);
   const videoPrompt = await u.db("o_prompt").where("type", "videoPromptGeneration").first();
@@ -162,8 +172,7 @@ ${storyboardSummary}
 }
 
 export async function generateBgmSuggestion(modelName: string, visualManual: string, content: string) {
-  if (!isSeedance20Model(modelName)) return "";
-
+  void modelName;
   try {
     const { text } = await u.Ai.Text("universalAi").invoke({
       system: [
@@ -184,9 +193,74 @@ export async function generateBgmSuggestion(modelName: string, visualManual: str
         },
       ],
     });
-    return text.trim();
+    const result = text.trim();
+    return result || buildBgmSuggestionFallback(content);
   } catch {
-    return "";
+    return buildBgmSuggestionFallback(content);
+  }
+}
+
+export function buildVideoPromptAiTrace(params: {
+  prompt: string;
+  thinking?: string;
+  modelName: string;
+  inputSummary: string;
+  visualManual: string;
+}): VideoPromptAiTrace {
+  return {
+    prompt: params.prompt,
+    thinking: params.thinking?.trim() || buildVideoPromptThinkingSummary(params.modelName, params.inputSummary, params.visualManual),
+    skill: "videoPromptGeneration",
+    tools: [
+      "loadVideoPromptContext",
+      "resolveVideoPromptTemplate",
+      'u.Ai.Text("universalAi").invoke',
+      "generateBgmSuggestion",
+    ],
+    modelName: params.modelName,
+    inputSummary: params.inputSummary,
+    visualManual: params.visualManual,
+  };
+}
+
+function buildVideoPromptThinkingSummary(modelName: string, inputSummary: string, visualManual: string) {
+  void modelName;
+  const hasSummary = inputSummary?.trim().length > 0;
+  const hasVisual = visualManual?.trim().length > 0;
+  return [
+    "先读取当前轨道关联的资产、分镜与视觉风格约束。",
+    hasVisual ? "再结合项目视觉手册与模型提示词模板整理生成方向。" : "",
+    hasSummary ? "随后按分镜内容拼接视频提示词，并同步生成 BGM 参考建议。" : "",
+    "最终输出可直接用于视频生成的提示词结果。",
+  ]
+    .filter(Boolean)
+    .join("");
+}
+
+function buildBgmSuggestionFallback(content: string) {
+  const text = content || "";
+  const toneMap: Array<[RegExp, string]> = [
+    [/紧张|压迫|危机|战斗|追逐|对抗/, "建议使用紧张压迫的中低频配乐，节奏中快，鼓点推进明显，适合在冲突升级处逐步增强。"],
+    [/悲伤|失落|痛苦|压抑|哀伤/, "建议使用克制的抒情氛围配乐，节奏偏慢，钢琴或弦乐铺底，适合情绪下沉与停顿段落。"],
+    [/悬疑|诡异|神秘|暗夜|黑暗/, "建议使用悬疑感较强的环境音色配乐，低频铺底、留白较多，适合推进未知感和压迫感。"],
+    [/温暖|治愈|轻松|温柔|日常/, "建议使用轻柔舒缓的氛围配乐，节奏平稳，木吉他或轻钢琴为主，适合人物互动与过渡段落。"],
+    [/热血|激昂|奋起|胜利|燃/, "建议使用鼓舞感更强的配乐，节奏更明确，打击乐和弦乐推进突出，适合动作升级和情绪爆发。"],
+  ];
+  const matched = toneMap.find(([reg]) => reg.test(text))?.[1];
+  return matched || "建议使用中性电影氛围配乐，节奏保持中等偏稳，前段以铺底和氛围为主，后段逐步加强层次与情绪推进。";
+}
+
+export function stringifyVideoPromptAiTrace(trace?: VideoPromptAiTrace | null) {
+  if (!trace) return "";
+  return JSON.stringify(trace);
+}
+
+export function parseVideoPromptAiTrace(value?: string | null): VideoPromptAiTrace | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as VideoPromptAiTrace;
+  } catch {
+    return null;
   }
 }
 

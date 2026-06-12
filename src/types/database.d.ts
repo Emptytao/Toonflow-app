@@ -1,4 +1,4 @@
-// @db-hash 5370e4df92960d3a175c718722417ae8
+// @db-hash 7cbe7d1b6ffc20b61483ee8a5ee326b4
 //该文件由脚本自动生成，请勿手动修改
 
 export interface memories {
@@ -33,15 +33,6 @@ export interface o_agentWorkData {
   'id'?: number;
   'key'?: string | null;
   'projectId'?: number | null;
-  'updateTime'?: number | null;
-}
-export interface o_productionAgentState {
-  'createTime'?: number | null;
-  'id'?: number;
-  'projectId': number;
-  'scriptId': number;
-  'storyboardWriteMode'?: string | null;
-  'supervisionGate'?: string | null;
   'updateTime'?: number | null;
 }
 export interface o_artStyle {
@@ -119,6 +110,15 @@ export interface o_novel {
   'id'?: number;
   'projectId'?: number | null;
   'reel'?: string | null;
+}
+export interface o_productionAgentState {
+  'createTime'?: number | null;
+  'id'?: number;
+  'projectId': number;
+  'scriptId': number;
+  'storyboardWriteMode'?: string | null;
+  'supervisionGate'?: string | null;
+  'updateTime'?: number | null;
 }
 export interface o_productionCanvasV2 {
   'createdAt': number;
@@ -266,6 +266,7 @@ export interface o_video {
   'videoTrackId'?: number | null;
 }
 export interface o_videoTrack {
+  'aiTrace'?: string | null;
   'bgmSuggestion'?: string | null;
   'duration'?: number | null;
   'id'?: number;

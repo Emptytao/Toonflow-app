@@ -6,6 +6,19 @@ import { validateFields } from "@/middleware/middleware";
 const router = express.Router();
 import { FlowData } from "@/agents/productionAgent/tools";
 
+type AssetRow = {
+  id?: number;
+  name?: string;
+  type?: string;
+  prompt?: string;
+  describe?: string;
+  filePath?: string;
+  state?: string;
+  errorReason?: string;
+  flowId?: string | number;
+  assetsId?: number | null;
+};
+
 export default router.post(
   "/",
   validateFields({
@@ -23,13 +36,39 @@ export default router.post(
 
     const scriptData = await u.db("o_script").where("projectId", projectId).where("id", episodesId).first();
     const scriptAssets = await u.db("o_scriptAssets").where("scriptId", episodesId);
-    const assetIds = scriptAssets.map((i) => i.assetId);
+    const scriptAssetIds = [...new Set(scriptAssets.map((i) => Number(i.assetId)).filter((id) => Number.isFinite(id) && id > 0))];
+
+    let assetIds: number[] = [];
+    if (scriptAssetIds.length) {
+      const linkedAssets = await u
+        .db("o_assets")
+        .whereIn("id", scriptAssetIds)
+        .select("id", "assetsId");
+      assetIds = [
+        ...new Set(
+          linkedAssets.map((item) => {
+            const parentId = Number(item.assetsId);
+            return Number.isFinite(parentId) && parentId > 0 ? parentId : Number(item.id);
+          }),
+        ),
+      ];
+    } else {
+      // 兼容旧数据：当剧集未写入任何 scriptAssets 绑定时，回退到项目级根资产，避免工作区 assets 为空。
+      const projectRootAssets = await u.db("o_assets").where("projectId", projectId).whereNull("assetsId").select("id");
+      assetIds = projectRootAssets.map((item) => Number(item.id)).filter((id) => Number.isFinite(id) && id > 0);
+    }
+
     const assetsData = await u
       .db("o_assets")
       .leftJoin("o_image", "o_assets.imageId", "o_image.id")
       .select("o_assets.*", "o_image.filePath", "o_image.state", "o_image.errorReason")
-      // @ts-ignore
-      .where("o_assets.id", "in", assetIds)
+      .modify((query) => {
+        if (assetIds.length) {
+          query.whereIn("o_assets.id", assetIds);
+        } else {
+          query.whereRaw("1 = 0");
+        }
+      })
       .andWhere("o_assets.assetsId", null)
       .where("o_assets.projectId", projectId);
 
@@ -38,8 +77,13 @@ export default router.post(
       .leftJoin("o_image", "o_assets.imageId", "o_image.id")
       .select("o_assets.*", "o_image.filePath", "o_image.state", "o_image.errorReason")
       .where("o_assets.projectId", projectId)
-      // @ts-ignore
-      .where("o_assets.assetsId", "in", assetIds)
+      .modify((query) => {
+        if (assetIds.length) {
+          query.whereIn("o_assets.assetsId", assetIds);
+        } else {
+          query.whereRaw("1 = 0");
+        }
+      })
       .whereNotNull("o_assets.assetsId");
 
     if (!sqlData) {
@@ -47,7 +91,7 @@ export default router.post(
         script: scriptData?.content ?? "",
         scriptPlan: "",
         assets: await Promise.all(
-          assetsData.map(async (item) => ({
+          assetsData.map(async (item: AssetRow) => ({
             id: item.id,
             name: item.name ?? "",
             type: item.type ?? "",
@@ -56,8 +100,8 @@ export default router.post(
             src: item.filePath && (await u.oss.getSmallImageUrl(item.filePath!)),
             derive: await Promise.all(
               childAssetsData
-                .filter((child) => child.assetsId === item.id)
-                .map(async (child) => ({
+                .filter((child: AssetRow) => child.assetsId === item.id)
+                .map(async (child: AssetRow) => ({
                   id: child.id,
                   assetsId: item.id,
                   name: child.name ?? "",
@@ -112,7 +156,7 @@ export default router.post(
         });
         const flowData = JSON.parse(sqlData!.data ?? "{}");
         flowData.assets = await Promise.all(
-          assetsData.map(async (item) => ({
+          assetsData.map(async (item: AssetRow) => ({
             id: item.id,
             name: item.name ?? "",
             type: item.type ?? "",
@@ -122,8 +166,8 @@ export default router.post(
             flowId: item.flowId,
             derive: await Promise.all(
               childAssetsData
-                .filter((child) => child.assetsId === item.id)
-                .map(async (child) => ({
+                .filter((child: AssetRow) => child.assetsId === item.id)
+                .map(async (child: AssetRow) => ({
                   id: child.id,
                   assetsId: item.id,
                   name: child.name ?? "",

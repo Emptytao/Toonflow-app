@@ -149,7 +149,16 @@ export default (toolCpnfig: ToolConfig) => {
         } else {
           const [insertedId] = await u.db("o_assets").insert(data);
           data.id = insertedId;
-          await u.db("o_scriptAssets").insert({ scriptId, assetId: insertedId });
+          const scriptAssetRows = [
+            { scriptId, assetId: insertedId },
+            { scriptId, assetId: deriveAsset.assetsId },
+          ];
+          for (const row of scriptAssetRows) {
+            const exists = await u.db("o_scriptAssets").where(row).first();
+            if (!exists) {
+              await u.db("o_scriptAssets").insert(row);
+            }
+          }
           thinking.appendText(`已新增衍生资产，ID: ${insertedId}\n`);
         }
         const res = await new Promise((resolve) => socket.emit("addDeriveAsset", data, (res: any) => resolve(res)));

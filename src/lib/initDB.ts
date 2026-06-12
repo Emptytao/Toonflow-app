@@ -612,6 +612,7 @@ export default async (knex: Knex, forceInit: boolean = false): Promise<void> => 
         table.text("reason");
         table.text("prompt");
         table.text("bgmSuggestion");
+        table.text("aiTrace");
         table.integer("selectVideoId");
         table.integer("duration");
         table.primary(["id"]);
