@@ -1,5 +1,5 @@
 import u from "@/utils";
-import { isSeedance20Model } from "@/utils/videoModelRouting";
+import { isOmniFlashModel, isSeedance20Model } from "@/utils/videoModelRouting";
 import fs from "fs/promises";
 import path from "path";
 
@@ -16,6 +16,17 @@ export interface VideoPromptStyleOption {
   value: VideoPromptStyle;
   label: string;
 }
+
+export const VIDEO_PROMPT_TEMPLATE_OPTIONS = [
+  { value: "auto", label: "按模型自动选择" },
+  { value: "universalMulti-parameter", label: "通用多参数模式" },
+  { value: "universalFirstAndLastFrame", label: "通用首尾帧模式" },
+  { value: "wan2.6Single-imageFirstFrame", label: "Wan 2.6 单图首帧模式" },
+  { value: "seedance2Multi-parameter", label: "Seedance 2.0 多参数模式" },
+  { value: "omni_flash-Multi-parameter", label: "Omni Flash 多参数模式" },
+] as const;
+
+export type VideoPromptTemplateKey = (typeof VIDEO_PROMPT_TEMPLATE_OPTIONS)[number]["value"];
 
 export const VIDEO_PROMPT_STYLE_OPTIONS: VideoPromptStyleOption[] = [
   { value: "general", label: "通用润色" },
@@ -65,31 +76,46 @@ export function normalizeVideoPromptStyle(value?: string | null): VideoPromptSty
   return "general";
 }
 
-export async function resolveVideoPromptTemplate(model: string, mode?: string) {
+export async function resolveVideoPromptTemplate(model: string, mode?: string, templateKey?: string | null) {
   const [vendorId = "", modelName = ""] = model.split(/:(.+)/);
   const videoPrompt = await u.db("o_prompt").where("type", "videoPromptGeneration").first();
   let videoPromptGeneration = "";
 
-  const modelPromptData = await u.db("o_modelPrompt").where("vendorId", vendorId).where("model", modelName).first();
-  if (modelPromptData?.path) {
-    try {
-      const fullPath = path.join(u.getPath(["modelPrompt"]), modelPromptData.path);
-      videoPromptGeneration = await fs.readFile(fullPath, "utf-8");
-    } catch {}
-  }
-
-  if (!videoPromptGeneration) {
-    const fileName = getVideoPromptFileName(modelName, mode);
+  if (templateKey && templateKey !== "auto") {
+    const fileName = getVideoPromptFileName(modelName, mode, templateKey);
     if (fileName) {
       try {
         const fullPath = path.join(u.getPath(["modelPrompt", "video"]), fileName);
         videoPromptGeneration = await fs.readFile(fullPath, "utf-8");
       } catch {}
     }
+  } else {
+    const modelPromptData = await u.db("o_modelPrompt").where("vendorId", vendorId).where("model", modelName).first();
+    if (modelPromptData?.path) {
+      try {
+        const fullPath = path.join(u.getPath(["modelPrompt"]), modelPromptData.path);
+        videoPromptGeneration = await fs.readFile(fullPath, "utf-8");
+      } catch {}
+    }
+
+    if (!videoPromptGeneration) {
+      const fileName = getVideoPromptFileName(modelName, mode, templateKey);
+      if (fileName) {
+        try {
+          const fullPath = path.join(u.getPath(["modelPrompt", "video"]), fileName);
+          videoPromptGeneration = await fs.readFile(fullPath, "utf-8");
+        } catch {}
+      }
+    }
   }
 
   if (!videoPromptGeneration) {
-    videoPromptGeneration = videoPrompt?.useData || videoPrompt?.data || "";
+    try {
+      const fallbackPath = path.join(u.getPath(["modelPrompt", "video"]), "universalMulti-parameterMode.md");
+      videoPromptGeneration = await fs.readFile(fallbackPath, "utf-8");
+    } catch {
+      videoPromptGeneration = videoPrompt?.useData || videoPrompt?.data || "";
+    }
   }
 
   return {
@@ -125,7 +151,20 @@ export function composeVideoPromptSystem(params: {
   visualManual: string;
   styleSkill: ResolvedVideoPromptStyle;
 }) {
-  return [params.template.trim(), params.visualManual.trim(), params.styleSkill.content.trim()].filter(Boolean).join("\n\n");
+  return [
+    params.template.trim(),
+    params.visualManual.trim(),
+    params.styleSkill.content.trim(),
+    [
+      "## 输出语言统一要求",
+      "- 最终视频提示词正文默认使用简体中文输出。",
+      "- 除台词内容需保持原始输入语言外，镜头、动作、场景、情绪、音效、叙事描述都必须使用简体中文。",
+      "- 若模板中存在英文示例或英文字段名要求，以本条语言要求为准，输出时统一改写为中文表达。",
+      "- 不要额外附加解释、分析过程或双语版本。",
+    ].join("\n"),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export async function loadVideoPromptContext(info: PromptInfoItem[]) {
@@ -353,13 +392,30 @@ export function buildStoryboardItemXml(item: VideoPromptStoryboard) {
 ></storyboardItem>`;
 }
 
-function getVideoPromptFileName(modelName: string, mode?: string) {
+function getVideoPromptFileName(modelName: string, mode?: string, templateKey?: string | null) {
+  return getVideoPromptFileNameByTemplate(modelName, mode, templateKey);
+}
+
+function getVideoPromptFileNameByTemplate(modelName: string, mode?: string, templateKey?: string | null) {
+  if (templateKey && templateKey !== "auto") {
+    const manualTemplateMap: Record<string, string> = {
+      "universalMulti-parameter": "universalMulti-parameterMode.md",
+      "universalFirstAndLastFrame": "universalFirstAndLastFrameMode.md",
+      "wan2.6Single-imageFirstFrame": "wan2.6Single-imageFirstFrameMode.md",
+      "seedance2Multi-parameter": "seedance2Multi-parameterMode.md",
+      "omni_flash-Multi-parameter": "omni_flash-Multi-parameter.md",
+    };
+    return manualTemplateMap[templateKey] || null;
+  }
   const modelLower = modelName.toLowerCase();
   if (modelLower.includes("wan") && modelLower.includes("2.6")) {
     return "wan2.6Single-imageFirstFrameMode.md";
   }
   if (isSeedance20Model(modelName)) {
     return "seedance2Multi-parameterMode.md";
+  }
+  if (isOmniFlashModel(modelName)) {
+    return "omni_flash-Multi-parameter.md";
   }
   if (mode === "startEndRequired" || mode === "endFrameOptional" || mode === "startFrameOptional") {
     return "universalFirstAndLastFrameMode.md";

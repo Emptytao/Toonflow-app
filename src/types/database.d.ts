@@ -1,4 +1,4 @@
-// @db-hash 7cbe7d1b6ffc20b61483ee8a5ee326b4
+// @db-hash 37d9a2fa3f478df18cb0c21476142070
 //该文件由脚本自动生成，请勿手动修改
 
 export interface memories {
@@ -114,6 +114,7 @@ export interface o_novel {
 export interface o_productionAgentState {
   'createTime'?: number | null;
   'id'?: number;
+  'multiReferenceModel'?: string | null;
   'projectId': number;
   'scriptId': number;
   'storyboardWriteMode'?: string | null;

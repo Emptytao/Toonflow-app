@@ -18,6 +18,18 @@ interface UploadItem {
   prompt?: string;
 }
 
+function normalizeReferenceType(value?: string | null): ReferenceList["type"] {
+  if (value === "audio" || value === "video") return value;
+  return "image";
+}
+
+async function getReferenceBase64(item: { path?: string; sources?: string }) {
+  if (!item.path) return "";
+  if (item.sources === "audio") return `data:audio/mpeg;base64,${(await u.oss.getFile(item.path)).toString("base64")}`;
+  if (item.sources === "video") return `data:video/mp4;base64,${(await u.oss.getFile(item.path)).toString("base64")}`;
+  return await u.oss.getImageBase64(item.path);
+}
+
 export default router.post(
   "/",
   validateFields({
@@ -100,7 +112,10 @@ export default router.post(
       const base64 = await Promise.all(
         images.map(async (item) => {
           if (!item) return null;
-          return { base64: await u.oss.getImageBase64(item.path), type: item.sources == "audio" ? "audio" : "image" };
+          return {
+            base64: await getReferenceBase64(item),
+            type: normalizeReferenceType(item.sources),
+          };
         }),
       );
       const relatedObjects = { projectId, videoId, scriptId, type: "视频" };

@@ -36,15 +36,17 @@ export default router.post(
     model: z.string(),
     mode: z.string().optional(),
     promptStyle: z.enum(["general", "high_energy", "lyrical"]).optional(),
+    templateKey: z.string().optional(),
     concurrentCount: z.number().optional(), //并发数
   }),
   async (req, res) => {
-    const { trackData, projectId, mode, model, promptStyle, concurrentCount = 5 } = req.body as {
+    const { trackData, projectId, mode, model, promptStyle, templateKey, concurrentCount = 5 } = req.body as {
       projectId: number;
       trackData: { trackId: number; info: { id: number; sources: string }[] }[];
       model: string;
       mode?: string;
       promptStyle?: "general" | "high_energy" | "lyrical";
+      templateKey?: string;
       concurrentCount?: number;
     };
     const normalizedPromptStyle = normalizeVideoPromptStyle(promptStyle);
@@ -53,7 +55,7 @@ export default router.post(
       const projectData = await u.db("o_project").select("*").where({ id: projectId }).first();
       const artStyle = projectData?.artStyle || "无";
       const visualManual = u.getArtPrompt(artStyle, "art_skills", "art_storyboard_video");
-      const { modelName, videoPromptGeneration } = await resolveVideoPromptTemplate(model, mode ?? projectData?.mode ?? undefined);
+      const { modelName, videoPromptGeneration } = await resolveVideoPromptTemplate(model, mode ?? projectData?.mode ?? undefined, templateKey);
       const styleSkill = await resolveVideoPromptStyle(normalizedPromptStyle);
       const system = composeVideoPromptSystem({
         template: videoPromptGeneration,

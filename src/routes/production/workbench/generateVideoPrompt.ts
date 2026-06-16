@@ -31,9 +31,10 @@ export default router.post(
     model: z.string(),
     mode: z.string(),
     promptStyle: z.enum(["general", "high_energy", "lyrical"]).optional(),
+    templateKey: z.string().optional(),
   }),
   async (req, res) => {
-    const { trackId, projectId, info, model, mode, promptStyle } = req.body;
+    const { trackId, projectId, info, model, mode, promptStyle, templateKey } = req.body;
     const normalizedPromptStyle = normalizeVideoPromptStyle(promptStyle);
 
     await u.db("o_videoTrack").where({ id: trackId }).update({
@@ -43,7 +44,7 @@ export default router.post(
 
     try {
       const { assets, storyboard, assetsAudioRecord } = await loadVideoPromptContext(info);
-      const { modelName, videoPromptGeneration } = await resolveVideoPromptTemplate(model, mode);
+      const { modelName, videoPromptGeneration } = await resolveVideoPromptTemplate(model, mode, templateKey);
       const styleSkill = await resolveVideoPromptStyle(normalizedPromptStyle);
       const projectData = await u.db("o_project").select("*").where({ id: projectId }).first();
       const artStyle = projectData?.artStyle || "无";

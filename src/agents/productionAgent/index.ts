@@ -7,7 +7,13 @@ import { createSkillTools, parseFrontmatter, scanSkills, useSkill } from "@/util
 import useTools from "@/agents/productionAgent/tools";
 import ResTool from "@/socket/resTool";
 import { getDirectorSkillPaths } from "@/utils/storySkills";
-import { resolveStoryboardPanelWriteMode, type StoryboardPanelWriteMode } from "@/utils/videoModelRouting";
+import {
+  getVideoModelPromptFamily,
+  isOmniFlashModel,
+  isSeedance20Model,
+  resolveStoryboardPanelWriteMode,
+  type StoryboardPanelWriteMode,
+} from "@/utils/videoModelRouting";
 import * as fs from "fs";
 import path from "path";
 
@@ -43,6 +49,8 @@ function buildMemPrompt(mem: Awaited<ReturnType<Memory["get"]>>): string {
 }
 
 const STORYBOARD_WRITE_MODES: [StoryboardPanelWriteMode, StoryboardPanelWriteMode] = ["纯文本多参模式", "首位帧模式"];
+const MULTI_REFERENCE_MODELS = ["seedance", "omni"] as const;
+type MultiReferenceModel = (typeof MULTI_REFERENCE_MODELS)[number];
 type SupervisionGateAction = "approve" | "revise" | "redo";
 type SupervisionGateStage = "directorPlan" | "storyboardTable";
 type SupervisionGateStatus = "pending" | "awaitingUserConfirmation";
@@ -61,6 +69,7 @@ interface ProductionAgentState {
   projectId?: number | null;
   scriptId?: number | null;
   storyboardWriteMode?: string | null;
+  multiReferenceModel?: string | null;
   supervisionGate?: string | null;
   createTime?: number | null;
   updateTime?: number | null;
@@ -83,6 +92,22 @@ function normalizeStoryboardWriteMode(value?: string | null): StoryboardPanelWri
   return STORYBOARD_WRITE_MODES.includes(value as StoryboardPanelWriteMode) ? (value as StoryboardPanelWriteMode) : null;
 }
 
+function normalizeMultiReferenceModel(value?: string | null): MultiReferenceModel | null {
+  return MULTI_REFERENCE_MODELS.includes(value as MultiReferenceModel) ? (value as MultiReferenceModel) : null;
+}
+
+function formatMultiReferenceModelLabel(model: MultiReferenceModel | null) {
+  if (model === "seedance") return "Seedance 2.0";
+  if (model === "omni") return "Omni Flash";
+  return "未确认";
+}
+
+function getRecommendedMultiReferenceModel(videoModelName: string): MultiReferenceModel | null {
+  if (isSeedance20Model(videoModelName)) return "seedance";
+  if (isOmniFlashModel(videoModelName)) return "omni";
+  return null;
+}
+
 function parseStoryboardWriteModeFromText(text: string): StoryboardPanelWriteMode | null {
   const normalized = String(text || "");
   if (/(第?1个|第?一种|选1|模式1|一号|方案1)/i.test(normalized)) return "纯文本多参模式";
@@ -91,6 +116,17 @@ function parseStoryboardWriteModeFromText(text: string): StoryboardPanelWriteMod
   const wantsFirstFrame = /(首位帧|首帧|首尾帧|首图|分镜图模式)/i.test(normalized);
   if (wantsMultiParameter && !wantsFirstFrame) return "纯文本多参模式";
   if (wantsFirstFrame && !wantsMultiParameter) return "首位帧模式";
+  return null;
+}
+
+function parseMultiReferenceModelFromText(text: string): MultiReferenceModel | null {
+  const normalized = String(text || "");
+  if (/(第?1个|第?一种|选1|模型1|一号|方案1)/i.test(normalized)) return "seedance";
+  if (/(第?2个|第?二种|选2|模型2|二号|方案2)/i.test(normalized)) return "omni";
+  const wantsSeedance = /(seedance|即梦|种子|15\s*秒|15s|1\s*[-~至到]\s*4|1-4)/i.test(normalized);
+  const wantsOmni = /(omni|flash|10\s*秒|10s|1\s*[-~至到]\s*3|1-3)/i.test(normalized);
+  if (wantsSeedance && !wantsOmni) return "seedance";
+  if (wantsOmni && !wantsSeedance) return "omni";
   return null;
 }
 
@@ -129,6 +165,7 @@ async function ensureProductionAgentState(projectId: number, scriptId: number): 
       projectId,
       scriptId,
       storyboardWriteMode: null,
+      multiReferenceModel: null,
       supervisionGate: null,
       createTime: now,
       updateTime: now,
@@ -140,6 +177,7 @@ async function ensureProductionAgentState(projectId: number, scriptId: number): 
     projectId,
     scriptId,
     storyboardWriteMode: null,
+    multiReferenceModel: null,
     supervisionGate: null,
     createTime: now,
     updateTime: now,
@@ -149,7 +187,7 @@ async function ensureProductionAgentState(projectId: number, scriptId: number): 
 async function updateProductionAgentState(
   projectId: number,
   scriptId: number,
-  data: Pick<Partial<ProductionAgentState>, "storyboardWriteMode" | "supervisionGate">,
+  data: Pick<Partial<ProductionAgentState>, "storyboardWriteMode" | "multiReferenceModel" | "supervisionGate">,
 ) {
   await ensureProductionAgentState(projectId, scriptId);
   await u
@@ -162,7 +200,15 @@ async function updateProductionAgentState(
 }
 
 async function setStoryboardWriteMode(projectId: number, scriptId: number, mode: StoryboardPanelWriteMode) {
+  if (mode === "首位帧模式") {
+    await updateProductionAgentState(projectId, scriptId, { storyboardWriteMode: mode, multiReferenceModel: null });
+    return;
+  }
   await updateProductionAgentState(projectId, scriptId, { storyboardWriteMode: mode });
+}
+
+async function setMultiReferenceModel(projectId: number, scriptId: number, model: MultiReferenceModel) {
+  await updateProductionAgentState(projectId, scriptId, { multiReferenceModel: model });
 }
 
 async function setSupervisionGate(projectId: number, scriptId: number, stage: SupervisionGateStage, status: SupervisionGateStatus, report?: string) {
@@ -188,17 +234,37 @@ function completeAssistantMessage(ctx: AgentContext, content: string) {
 }
 
 function buildWriteModeAskMessage(videoModelName: string, recommendedMode: StoryboardPanelWriteMode) {
+  const promptFamily = getVideoModelPromptFamily(videoModelName);
   return [
     "开始生产前，需要先确认当前剧本的分镜面板写入模式。本设置按剧本保存，同一项目的其他剧本仍会单独确认。",
     "",
     `当前视频模型：${videoModelName}`,
+    `模型提示词类型：${promptFamily}`,
     `推荐模式：${recommendedMode}`,
     "",
     "请选择一种写入模式：",
-    "1. 纯文本多参模式：适合 Seedance 2.0，按 track 写入完整分镜段，不生成分镜图 prompt。",
+    "1. 纯文本多参模式：适合 Seedance 2.0 / Omni Flash 等多参视频模型，按 track 写入完整分镜段，不生成分镜图 prompt。",
+    "   - Seedance 2.0：15 秒分镜段，1-4 个画面，支持图片 / 视频 / 音频参考。",
+    "   - Omni Flash：10 秒分镜段，1-3 个画面，仅使用图片参考。",
     "2. 首位帧模式：适合需要故事板/首帧图的模型，逐行写入并生成分镜图 prompt。",
     "",
     "你可以直接回复“纯文本多参模式”或“首位帧模式”。",
+  ].join("\n");
+}
+
+function buildMultiReferenceModelAskMessage(videoModelName: string, recommendedModel: MultiReferenceModel | null) {
+  const recommendedLabel = recommendedModel ? formatMultiReferenceModelLabel(recommendedModel) : "请按本次目标选择";
+  return [
+    "已选择“纯文本多参模式”。还需要确认本剧本后续要适配的多参考视频模板。",
+    "",
+    `当前视频模型：${videoModelName}`,
+    `推荐多参考模板：${recommendedLabel}`,
+    "",
+    "请选择一种多参考模板：",
+    "1. Seedance 2.0：15 秒分镜段，1-4 个画面，支持图片 / 视频 / 音频参考。",
+    "2. Omni Flash：10 秒分镜段，1-3 个画面，仅使用图片参考，不使用视频 / 音频参考。",
+    "",
+    "你可以直接回复“Seedance”或“Omni”。",
   ].join("\n");
 }
 
@@ -215,7 +281,7 @@ function buildSupervisionGateAskMessage(gate: SupervisionGate) {
 function createProductionStateTools(projectId: number, scriptId: number) {
   return {
     confirm_storyboard_write_mode: tool({
-      description: "确认并保存当前剧本的分镜面板写入模式。仅可选择纯文本多参模式或首位帧模式。",
+      description: "确认并保存当前剧本的分镜面板写入模式。仅可选择纯文本多参模式或首位帧模式；Seedance/Omni 等多参视频模型通常选择纯文本多参模式。",
       inputSchema: jsonSchema<{ mode: StoryboardPanelWriteMode }>(
         z
           .object({
@@ -225,7 +291,24 @@ function createProductionStateTools(projectId: number, scriptId: number) {
       ),
       execute: async ({ mode }) => {
         await setStoryboardWriteMode(projectId, scriptId, mode);
+        if (mode === "纯文本多参模式") {
+          return "已确认当前剧本的分镜面板写入模式：纯文本多参模式。还需要继续确认多参考模板：Seedance 2.0 或 Omni Flash。";
+        }
         return `已确认当前剧本的分镜面板写入模式：${mode}。可以开始导演规划。`;
+      },
+    }),
+    confirm_multi_reference_model: tool({
+      description: "确认并保存当前剧本在纯文本多参模式下适配的多参考视频模板。Seedance 为 15 秒/1-4 画面；Omni 为 10 秒/1-3 画面且仅图片参考。",
+      inputSchema: jsonSchema<{ model: MultiReferenceModel }>(
+        z
+          .object({
+            model: z.enum(MULTI_REFERENCE_MODELS).describe("用户确认的多参考视频模板：seedance 或 omni"),
+          })
+          .toJSONSchema(),
+      ),
+      execute: async ({ model }) => {
+        await setMultiReferenceModel(projectId, scriptId, model);
+        return `已确认当前剧本的多参考模板：${formatMultiReferenceModelLabel(model)}。可以开始导演规划。`;
       },
     }),
     confirm_supervision_gate: tool({
@@ -326,15 +409,38 @@ export async function runDecisionAI(ctx: AgentContext) {
 
   const productionState = await ensureProductionAgentState(ctx.resTool.data.projectId, ctx.resTool.data.scriptId);
   const confirmedStoryboardWriteMode = normalizeStoryboardWriteMode(productionState.storyboardWriteMode);
+  const confirmedMultiReferenceModel = normalizeMultiReferenceModel(productionState.multiReferenceModel);
+  const recommendedMultiReferenceModel = getRecommendedMultiReferenceModel(videoModelName);
   if (!confirmedStoryboardWriteMode) {
     const modeFromText = parseStoryboardWriteModeFromText(text);
     if (modeFromText) {
       await setStoryboardWriteMode(ctx.resTool.data.projectId, ctx.resTool.data.scriptId, modeFromText);
-      completeAssistantMessage(ctx, `已确认当前剧本的分镜面板写入模式：${modeFromText}。可以开始导演规划。`);
-      await memory.add("assistant:decision", `已确认当前剧本的分镜面板写入模式：${modeFromText}。`);
+      if (modeFromText === "纯文本多参模式") {
+        const askMessage = buildMultiReferenceModelAskMessage(videoModelName, recommendedMultiReferenceModel);
+        completeAssistantMessage(ctx, askMessage);
+        await memory.add("assistant:decision", removeAllXmlTags(askMessage));
+        return;
+      }
+      const confirmedMessage = `已确认当前剧本的分镜面板写入模式：${modeFromText}。可以开始导演规划。`;
+      completeAssistantMessage(ctx, confirmedMessage);
+      await memory.add("assistant:decision", confirmedMessage);
       return;
     }
     const askMessage = buildWriteModeAskMessage(videoModelName, recommendedStoryboardWriteMode);
+    completeAssistantMessage(ctx, askMessage);
+    await memory.add("assistant:decision", removeAllXmlTags(askMessage));
+    return;
+  }
+  if (confirmedStoryboardWriteMode === "纯文本多参模式" && !confirmedMultiReferenceModel) {
+    const modelFromText = parseMultiReferenceModelFromText(text);
+    if (modelFromText) {
+      await setMultiReferenceModel(ctx.resTool.data.projectId, ctx.resTool.data.scriptId, modelFromText);
+      const confirmedMessage = `已确认当前剧本的多参考模板：${formatMultiReferenceModelLabel(modelFromText)}。可以开始导演规划。`;
+      completeAssistantMessage(ctx, confirmedMessage);
+      await memory.add("assistant:decision", confirmedMessage);
+      return;
+    }
+    const askMessage = buildMultiReferenceModelAskMessage(videoModelName, recommendedMultiReferenceModel);
     completeAssistantMessage(ctx, askMessage);
     await memory.add("assistant:decision", removeAllXmlTags(askMessage));
     return;
@@ -372,6 +478,9 @@ export async function runDecisionAI(ctx: AgentContext) {
     `视频模型：${videoModelName}`,
     `推荐分镜面板写入模式：${recommendedStoryboardWriteMode}`,
     `已确认分镜面板写入模式：${confirmedStoryboardWriteMode}`,
+    `已确认多参考模板：${
+      confirmedStoryboardWriteMode === "纯文本多参模式" ? formatMultiReferenceModelLabel(confirmedMultiReferenceModel) : "不适用"
+    }`,
     supervisionGateContext,
   ].join("\n");
 
@@ -477,26 +586,50 @@ async function createSubAgent(parentCtx: AgentContext) {
     const state = await ensureProductionAgentState(projectId, scriptId);
     return normalizeStoryboardWriteMode(state.storyboardWriteMode);
   };
+  const getConfirmedMultiReferenceModel = async () => {
+    const state = await ensureProductionAgentState(projectId, scriptId);
+    return normalizeMultiReferenceModel(state.multiReferenceModel);
+  };
   const initialStoryboardWriteMode = await getConfirmedStoryboardWriteMode();
+  const initialMultiReferenceModel = await getConfirmedMultiReferenceModel();
   const models = await u.vendor.getModelList(id);
   if (!models.length) throw new Error(`项目使用的模型不存在，ID: ${projectInfo.videoModel}`);
 
-  const buildModelInfo = (storyboardWriteMode: StoryboardPanelWriteMode | null = initialStoryboardWriteMode) =>
+  const buildModelInfo = (
+    storyboardWriteMode: StoryboardPanelWriteMode | null = initialStoryboardWriteMode,
+    multiReferenceModel: MultiReferenceModel | null = initialMultiReferenceModel,
+  ) =>
     [
       "项目使用的模型如下：",
       `图像模型：${imageModelName}`,
       `视频模型：${videoModelName}`,
+      `视频模型提示词类型：${getVideoModelPromptFamily(videoModelName)}`,
       `推荐分镜面板写入模式：${recommendedStoryboardWriteMode}`,
       `已确认分镜面板写入模式：${storyboardWriteMode ?? "未确认"}`,
+      `已确认多参考模板：${
+        storyboardWriteMode === "纯文本多参模式" ? formatMultiReferenceModelLabel(multiReferenceModel) : "不适用"
+      }`,
     ].join("\n");
 
   async function assertStoryboardWriteModeConfirmed() {
     const mode = await getConfirmedStoryboardWriteMode();
     if (!mode) {
-      throw new Error("当前剧本尚未确认分镜面板写入模式。请先让用户选择“纯文本多参模式”或“首位帧模式”。");
+      throw new Error("当前剧本尚未确认分镜面板写入模式。请先让用户选择“纯文本多参模式”或“首位帧模式”；Seedance/Omni 等多参视频模型通常选择“纯文本多参模式”。");
     }
     return mode;
   }
+
+  async function assertProductionModeConfirmed() {
+    const mode = await assertStoryboardWriteModeConfirmed();
+    if (mode !== "纯文本多参模式") return { storyboardWriteMode: mode, multiReferenceModel: null };
+    const multiReferenceModel = await getConfirmedMultiReferenceModel();
+    if (!multiReferenceModel) {
+      throw new Error("当前剧本已选择“纯文本多参模式”，但尚未确认多参考模板。请先让用户选择“Seedance 2.0”或“Omni Flash”。");
+    }
+    return { storyboardWriteMode: mode, multiReferenceModel };
+  }
+
+  const getModelInfo = async () => buildModelInfo(await getConfirmedStoryboardWriteMode(), await getConfirmedMultiReferenceModel());
 
   async function getActiveSupervisionGate() {
     const state = await ensureProductionAgentState(projectId, scriptId);
@@ -566,7 +699,7 @@ async function createSubAgent(parentCtx: AgentContext) {
     description: "运行执行subAgent来完成衍生资产分析与信息写入相关任务",
     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
     execute: async ({ prompt }) => {
-      await assertStoryboardWriteModeConfirmed();
+      await assertProductionModeConfirmed();
       await assertNoBlockingSupervisionGate();
       const skill = path.join(u.getPath("skills"), "production_execution_derive_assets.md");
       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
@@ -577,7 +710,7 @@ async function createSubAgent(parentCtx: AgentContext) {
         name: "执行导演",
         memoryKey: "assistant:execution",
         messages: [
-          { role: "assistant", content: artSkills.prompt + `\n${buildModelInfo()}` },
+          { role: "assistant", content: artSkills.prompt + `\n${await getModelInfo()}` },
           { role: "user", content: prompt },
         ],
         tools: { activate_skill: artSkills.tools.activate_skill },
@@ -590,7 +723,7 @@ async function createSubAgent(parentCtx: AgentContext) {
     description: "运行执行subAgent来完成衍生资产图片生成相关任务",
     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
     execute: async ({ prompt }) => {
-      await assertStoryboardWriteModeConfirmed();
+      await assertProductionModeConfirmed();
       await assertNoBlockingSupervisionGate();
       const skill = path.join(u.getPath("skills"), "production_execution_generate_assets.md");
       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
@@ -601,7 +734,7 @@ async function createSubAgent(parentCtx: AgentContext) {
         name: "执行导演",
         memoryKey: "assistant:execution",
         messages: [
-          { role: "assistant", content: artSkills.prompt + `\n${buildModelInfo()}` },
+          { role: "assistant", content: artSkills.prompt + `\n${await getModelInfo()}` },
           { role: "user", content: prompt },
         ],
         tools: { activate_skill: artSkills.tools.activate_skill },
@@ -614,7 +747,7 @@ async function createSubAgent(parentCtx: AgentContext) {
     description: "运行执行subAgent来完成导演规划相关任务",
     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
     execute: async ({ prompt }) => {
-      await assertStoryboardWriteModeConfirmed();
+      await assertProductionModeConfirmed();
       await assertNoBlockingSupervisionGate("directorPlan");
       const skill = path.join(u.getPath("skills"), "production_execution_director_plan.md");
       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
@@ -628,7 +761,7 @@ async function createSubAgent(parentCtx: AgentContext) {
         name: "执行导演",
         memoryKey: "assistant:execution",
         messages: [
-          { role: "assistant", content: artSkills.prompt + `\n${buildModelInfo()}` },
+          { role: "assistant", content: artSkills.prompt + `\n${await getModelInfo()}` },
           { role: "user", content: prompt + addPrompt },
         ],
         tools: { activate_skill: artSkills.tools.activate_skill },
@@ -653,7 +786,7 @@ async function createSubAgent(parentCtx: AgentContext) {
 
   async function runStoryboardPanelAgent(prompt: string) {
     await assertNoBlockingSupervisionGate();
-    const storyboardWriteMode = await assertStoryboardWriteModeConfirmed();
+    const { storyboardWriteMode } = await assertProductionModeConfirmed();
     const skill = path.join(u.getPath("skills"), "production_execution_storyboard_panel.md");
     const systemPrompt = await fs.promises.readFile(skill, "utf-8");
     const stagePrompt = `写入模式：${storyboardWriteMode}\n${prompt}`;
@@ -665,7 +798,7 @@ async function createSubAgent(parentCtx: AgentContext) {
       name: "执行导演",
       memoryKey: "assistant:execution",
       messages: [
-        { role: "assistant", content: productionSkills.prompt + `\n${buildModelInfo(storyboardWriteMode)}` },
+        { role: "assistant", content: productionSkills.prompt + `\n${await getModelInfo()}` },
         { role: "user", content: stagePrompt },
       ],
       tools: { activate_skill: productionSkills.tools.activate_skill },
@@ -697,7 +830,7 @@ async function createSubAgent(parentCtx: AgentContext) {
     description: "运行执行subAgent来完成分镜图生成相关任务",
     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
     execute: async ({ prompt }) => {
-      await assertStoryboardWriteModeConfirmed();
+      await assertProductionModeConfirmed();
       await assertNoBlockingSupervisionGate();
       await ensureStoryboardPanelReady(prompt);
       const skill = path.join(u.getPath("skills"), "production_execution_storyboard_gen.md");
@@ -709,7 +842,7 @@ async function createSubAgent(parentCtx: AgentContext) {
         name: "执行导演",
         memoryKey: "assistant:execution",
         messages: [
-          { role: "assistant", content: artSkills.prompt + `\n${buildModelInfo()}` },
+          { role: "assistant", content: artSkills.prompt + `\n${await getModelInfo()}` },
           { role: "user", content: prompt },
         ],
         tools: { activate_skill: artSkills.tools.activate_skill },
@@ -729,7 +862,7 @@ async function createSubAgent(parentCtx: AgentContext) {
     description: "运行执行subAgent来完成分镜表构建相关任务",
     inputSchema: jsonSchema<{ prompt: string }>(promptInput),
     execute: async ({ prompt }) => {
-      await assertStoryboardWriteModeConfirmed();
+      await assertProductionModeConfirmed();
       await assertNoBlockingSupervisionGate("storyboardTable");
       const skill = path.join(u.getPath("skills"), "production_execution_storyboard_table.md");
       const systemPrompt = await fs.promises.readFile(skill, "utf-8");
@@ -743,7 +876,7 @@ async function createSubAgent(parentCtx: AgentContext) {
         name: "执行导演",
         memoryKey: "assistant:execution",
         messages: [
-          { role: "assistant", content: storyboardTableSkills.prompt + `\n${buildModelInfo()}` },
+          { role: "assistant", content: storyboardTableSkills.prompt + `\n${await getModelInfo()}` },
           { role: "user", content: prompt + addPrompt },
         ],
         tools: { activate_skill: storyboardTableSkills.tools.activate_skill },

@@ -9,6 +9,7 @@ import {
   type VideoPromptAiTrace,
   type VideoPromptStyle,
   VIDEO_PROMPT_STYLE_OPTIONS,
+  VIDEO_PROMPT_TEMPLATE_OPTIONS,
 } from "./videoPromptUtils";
 const router = express.Router();
 
@@ -230,6 +231,7 @@ export default router.post(
         ),
         trackList,
         promptStyleOptions: VIDEO_PROMPT_STYLE_OPTIONS,
+        templateOptions: VIDEO_PROMPT_TEMPLATE_OPTIONS,
       }),
     );
   },

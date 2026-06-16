@@ -20,7 +20,7 @@
 
 ```xml
 <storyboardItem
-  videoDesc='（画面描述、场景、关联资产名称、时长、景别、运镜、角色动作、情绪、光影氛围、台词、音效、关联资产ID）'
+  videoDesc='（画面描述、场景、关联资产名称、时长、景别、运镜、角色动作、情绪、台词、音效、关联资产ID；旧数据可能包含光影氛围字段）'
   prompt='待生成'
   track='分组'
   duration='视频推荐时间'
@@ -43,46 +43,46 @@
 | 6 | 运镜 | 控制运镜方式 |
 | 7 | 角色动作 | 动作描写 |
 | 8 | 情绪 | 情绪氛围 |
-| 9 | 光影氛围 | 光影描写 |
-| 10 | 台词 | 台词/音频段 |
-| 11 | 音效 | 音效描写 |
-| 12 | 关联资产ID | 资产ID↔角色标签映射 |
+| 9 | 台词 | 台词/音频段 |
+| 10 | 音效 | 音效描写 |
+| 11 | 关联资产ID | 资产ID↔角色标签映射 |
+| 兼容 | 光影氛围 | 仅兼容旧数据；新分镜表不再提供此字段，不得强制要求 |
 
 ### 4. 通用约束
 
 - **视觉风格**：风格相关描述参考 Assistant 中的「视觉风格约束」部分内容，不在本 Skill 内自行定义风格
 - **仅输出视频提示词**：不附加任何解释、注释、分析过程、推理步骤、分隔线（`---`）或额外说明
-- **严格遵循 videoDesc**：提示词内容严格基于 videoDesc 中的画面描述、时长、景别、运镜、角色动作、情绪、光影氛围、台词、音效字段生成，不编造额外内容
+- **严格遵循 videoDesc**：提示词内容严格基于 videoDesc 中的画面描述、时长、景别、运镜、角色动作、情绪、台词、音效字段生成，不编造额外内容；旧数据若包含光影氛围可保留，但不得要求新分镜表必须提供该字段
 - **台词不可缺失**：videoDesc 中有台词的分镜，必须在提示词中完整体现台词内容，不得遗漏
 - **台词保持原始输入**：台词内容严禁翻译，必须保持 videoDesc 中的原始语言原样输出
 - **台词类型标注**：必须区分普通对白（dialogue / 说）、内心独白（OS / 内心OS）、画外音（VO / 画外音VO）
 - **时间分段最低 1 秒**：所有涉及时间分段的最小粒度为 1s，禁止出现低于 1 秒的间隔
 - **不修改原始输入**：不改写 `<storyboardItem>` 的任何字段；`prompt` 字段仅作画面参考
-- **不编造资产或台词**：只使用输入中提供的资产信息；无台词则标注「无台词」/ `No dialogue`
+- **不编造资产或台词**：只使用输入中提供的资产信息；无台词则标注「无台词」
 
 ### 5. 景别 → 镜头标签映射
 
-| videoDesc 景别 | 英文标签 |
+| videoDesc 景别 | 中文标签 |
 |------|------|
-| 远景 | extreme wide shot |
-| 全景 | wide establishing shot |
-| 中景 | medium shot |
-| 近景 | close-up |
-| 特写 | close-up |
-| 大特写 | extreme close-up |
+| 远景 | 远景 |
+| 全景 | 全景 |
+| 中景 | 中景 |
+| 近景 | 近景 |
+| 特写 | 特写 |
+| 大特写 | 大特写 |
 
 ### 6. 运镜 → 镜头标签映射
 
-| videoDesc 运镜 | 英文标签 |
+| videoDesc 运镜 | 中文标签 |
 |------|------|
-| 静止 | static camera |
-| 推进 | dolly in / push in |
-| 拉远 | dolly out / pull back |
-| 跟踪 | tracking shot |
-| 摇镜 | pan left/right |
-| 甩镜 | whip pan |
-| 升降 | crane up/down |
-| 环绕 | surround shooting |
+| 静止 | 静止镜头 |
+| 推进 | 推进镜头 |
+| 拉远 | 拉远镜头 |
+| 跟踪 | 跟踪镜头 |
+| 摇镜 | 摇镜 |
+| 甩镜 | 甩镜 |
+| 升降 | 升降镜头 |
+| 环绕 | 环绕运镜 |
 
 ---
 
@@ -90,10 +90,10 @@
 
 - **单图首帧模式**：仅有首帧（分镜图），无尾帧；每次仅输入/输出一条分镜
 - **单条分镜输入/输出**：每次仅输入一条 `<storyboardItem>` 及其关联资产信息，输出也仅为一段完整的叙事式提示词
-- **叙事式英文提示词**：像写小说一样描写画面，禁止标签罗列（不写 `4K, cinematic, high quality` 这类堆砌）
-- **三段式结构**：风格基调 → 主体动作 + 场景环境 + 光线氛围 → 镜头收尾
+- **叙事式中文提示词**：像写小说一样描写画面，禁止标签罗列（不写 `4K, cinematic, high quality` 这类堆砌）
+- **三段式结构**：风格基调 → 主体动作 + 场景环境 + 可由首帧/场景资产推导的画面氛围 → 镜头收尾
 - **纯文本提示词**：提示词内**不使用任何 `@图N ` 引用**，全部内容用纯文本描述  
-- **严格遵循 videoDesc**：提示词内容严格基于 videoDesc 中的画面描述、时长、景别、运镜、角色动作、情绪、光影氛围、台词、音效字段生成，不编造额外内容
+- **严格遵循 videoDesc**：提示词内容严格基于 videoDesc 中的画面描述、时长、景别、运镜、角色动作、情绪、台词、音效字段生成，不编造额外内容；旧数据若包含光影氛围可保留，但不得要求新分镜表必须提供该字段
 
 ---
 
@@ -106,7 +106,7 @@
 {主体名} {外观简述}, {具体动作/姿态描述}, {情绪/表情用动作暗示}.
 {场景背景主体}, {具体环境物件}, {空间感}, {时间/天气}.
 {光线方向/色温} {质感描述}, {情绪暗示光影}.
-{台词描述（如有，含 dialogue/OS/VO 标注）/ No dialogue}.
+{台词描述（如有，含 对白/内心OS/画外音VO 标注）/ 无台词}.
 {音效描述}.
 {拍摄方式}, {景别}, {视角}, {运镜方式}.
 ```
@@ -129,15 +129,15 @@
 
 ## 生成规则
 
-1. **全部用英文**
+1. **全部用中文**
 2. **不使用任何 `@图N ` 引用**
 3. **叙事式描写**：禁止标签罗列和配置清单式写法
 4. **主体用文字描述**：简要描述主体外观特征，嵌入主体描述中
 5. **台词不可缺失**：videoDesc 中有台词的分镜，必须在提示词中完整输出台词内容（保持原始语言，不翻译）
 6. **台词类型标注**：
-   - 普通对白 → `(dialogue)`
-   - 内心独白 → `(inner monologue, OS)`
-   - 画外音 → `(voiceover, VO)`
+   - 普通对白 → `（对白）`
+   - 内心独白 → `（内心OS）`
+   - 画外音 → `（画外音VO）`
 7. **单条输入/输出**：每次仅处理一条分镜，无编号前缀
 8. **无需标注时长**：时长由模型侧控制
 9. **镜头描述融入叙事**：不用方括号标签，用完整句子描述镜头
@@ -159,13 +159,13 @@
 输出：
 
 ```
-A cinematic epic scene with a cold, desaturated palette,
-A lone man in dark flowing robes stands atop an ancient city wall, hands clasped behind his back, robes and hair billowing in the wind, gaze fixed on the vast land stretching to the horizon, jaw set firm, eyes unwavering.
-The weathered stone battlements frame the endless expanse below, rolling terrain fading into haze beneath a heavy dusk sky, clouds layered in muted golds and slate greys.
-Cold side-backlight from the setting sun carves a sharp silhouette, long shadows stretching across the stone floor, a faint warm rim outlining the figure against the cool atmosphere.
-No dialogue.
-Wind howling across the open wall, fabric flapping rhythmically.
-Captured in a wide establishing shot from a slightly low angle, static camera, single continuous take.
+电影感史诗氛围，整体冷调而克制。
+一名身着深色长袍的男子独立于古老城墙之上，双手负后，衣袍与发丝在风中扬起，目光越过城墙望向远处，神情坚定。
+斑驳石墙勾出空旷边界，远方大地在薄雾中向外延伸，沉沉暮色压在天际。
+夕阳的侧后方冷光切出清晰轮廓，长影铺在石面上，人物边缘泛起一圈微弱暖光。
+无台词。
+风声掠过城墙，衣料持续翻动。
+略低机位的全景静止镜头，单镜到底收束全段画面。
 ```
 
 **示例2：有台词分镜**
@@ -181,11 +181,11 @@ Captured in a wide establishing shot from a slightly low angle, static camera, s
 输出：
 
 ```
-A melancholic cinematic scene, dusk tones deepening,
-A young woman in a light-colored dress ascends the final stone steps onto the city wall, her gaze locked on the lone figure ahead, brow slightly furrowed, pace slowing as she approaches, lips parting softly.
-The ancient city wall stretches behind her, weathered stairs leading up from below, the distant skyline dimming as the last traces of golden hour fade into twilight.
-Fading warm light mingles with rising cool blue tones, the contrast between the two figures softened by the diffused remnants of sunset.
-"你又一个人在这里。" — Su Jin (dialogue).
-Footsteps on stone, wind sweeping across the battlements, fabric rustling.
-A medium tracking shot follows the woman from behind as she ascends and approaches, handheld camera with subtle movement, single continuous take.
+忧郁的电影感氛围，暮色一点点压下来。
+一名身着浅色衣裙的年轻女子踏上最后几级石阶，朝城墙上的孤身身影走去，目光始终落在前方，眉心微蹙，靠近时脚步明显放缓，唇间轻启。
+古老城墙在她身后延展开来，斑驳石阶自下方一路攀升，远处天际线随着最后一缕余晖逐渐沉暗。
+残留暖光与升起的冷蓝色调交织，二人之间的距离被傍晚余光柔和包裹。
+“你又一个人在这里。”——苏锦（对白）。
+石阶脚步声、城墙风声、衣料轻响彼此交织。
+中景跟拍镜头从女子身后跟随她上行与靠近，带一点轻微手持感，单镜到底。
 ```
