@@ -24,7 +24,8 @@ export default router.post(
           videoList.map(async (s) => ({
             ...s,
             state: s.state === "生成成功" ? "已完成" : s.state,
-            src: s.state === "生成成功" && s.filePath ? await u.oss.getSmallImageUrl(s.filePath) : "",
+            // 视频文件必须返回原始可播放地址，不能走图片缩略图 URL
+            src: s.state === "生成成功" && s.filePath ? await u.oss.getFileUrl(s.filePath) : "",
           })),
         ),
       ),
